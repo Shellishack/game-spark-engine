@@ -10,7 +10,7 @@ app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
 
 function defaultWorkspaceRoot() {
-  return path.join(app.getPath("documents"), "Game Spark AI");
+  return path.join(app.getPath("home"), "Game Spark AI");
 }
 
 function settingsPath() {

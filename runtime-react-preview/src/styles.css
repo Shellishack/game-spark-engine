@@ -197,6 +197,45 @@ pre {
   gap: 1rem;
 }
 
+.workspace-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid #ccd4d8;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.workspace-picker.compact {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.workspace-picker h2 {
+  margin-bottom: 0.3rem;
+}
+
+.workspace-picker p {
+  margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
+  color: #2b363d;
+  font-size: 0.9rem;
+}
+
+.workspace-picker small {
+  color: #6f7a81;
+  font-weight: 800;
+}
+
+.workspace-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 .game-gallery {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

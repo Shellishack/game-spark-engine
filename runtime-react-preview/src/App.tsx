@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   codexSystemPrompt,
   createManifest,
@@ -10,7 +10,15 @@ import {
   starterProject,
 } from "./codexPipeline";
 import { PlayCanvasPreview } from "./PlayCanvasPreview";
-import type { AgentEvent, AgentPhase, CodexRunRequest, GameProjectAsset, GameProjectManifest, PromptBlock } from "./projectTypes";
+import type {
+  AgentEvent,
+  AgentPhase,
+  CodexRunRequest,
+  GameProjectAsset,
+  GameProjectManifest,
+  PromptBlock,
+  WorkspaceInfo,
+} from "./projectTypes";
 
 const phaseLabels: Record<AgentPhase, string> = {
   idle: "Idle",
@@ -30,6 +38,14 @@ export default function App() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [phase, setPhase] = useState<AgentPhase>("ready");
   const [selectedAssetId, setSelectedAssetId] = useState(starterProject.assets[0]?.id ?? "");
+  const [workspace, setWorkspace] = useState<WorkspaceInfo>({
+    path: "~/Game Spark AI",
+    defaultPath: "~/Game Spark AI",
+  });
+
+  useEffect(() => {
+    window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
+  }, []);
 
   const selectedAsset = useMemo(
     () => project?.assets.find((asset) => asset.id === selectedAssetId) ?? project?.assets[0],
@@ -117,8 +133,11 @@ export default function App() {
       {view === "home" ? (
         <Home
           promptBlocks={promptBlocks}
+          workspace={workspace}
           onDraftChange={updateDraft}
           onAddAttachment={addMockAttachment}
+          onSelectWorkspace={selectWorkspace}
+          onResetWorkspace={resetWorkspace}
           onStart={() => startRun("create")}
         />
       ) : (
@@ -129,8 +148,11 @@ export default function App() {
           selectedAssetId={selectedAssetId}
           events={events}
           phase={phase}
+          workspace={workspace}
           onDraftChange={updateDraft}
           onAddAttachment={addMockAttachment}
+          onSelectWorkspace={selectWorkspace}
+          onResetWorkspace={resetWorkspace}
           onIterate={() => startRun("iterate")}
           onSelectAsset={setSelectedAssetId}
           onBackHome={() => setView("home")}
@@ -138,6 +160,20 @@ export default function App() {
       )}
     </main>
   );
+
+  async function selectWorkspace() {
+    const nextWorkspace = await window.gameSpark?.selectWorkspace?.();
+    if (nextWorkspace) {
+      setWorkspace(nextWorkspace);
+    }
+  }
+
+  async function resetWorkspace() {
+    const nextWorkspace = await window.gameSpark?.resetWorkspace?.();
+    if (nextWorkspace) {
+      setWorkspace(nextWorkspace);
+    }
+  }
 }
 
 type PromptComposerProps = {
@@ -149,7 +185,14 @@ type PromptComposerProps = {
   onSubmit: () => void;
 };
 
-function Home(props: Omit<PromptComposerProps, "compact" | "actionLabel" | "onSubmit"> & { onStart: () => void }) {
+function Home(
+  props: Omit<PromptComposerProps, "compact" | "actionLabel" | "onSubmit"> & {
+    workspace: WorkspaceInfo;
+    onSelectWorkspace: () => void;
+    onResetWorkspace: () => void;
+    onStart: () => void;
+  },
+) {
   return (
     <section className="home-view">
       <div className="brand-row">
@@ -159,6 +202,8 @@ function Home(props: Omit<PromptComposerProps, "compact" | "actionLabel" | "onSu
         </div>
         <span className="status-pill">Local Codex backend</span>
       </div>
+
+      <WorkspacePicker workspace={props.workspace} onSelectWorkspace={props.onSelectWorkspace} onResetWorkspace={props.onResetWorkspace} />
 
       <PromptComposer
         promptBlocks={props.promptBlocks}
@@ -199,8 +244,11 @@ function Workspace({
   selectedAssetId,
   events,
   phase,
+  workspace,
   onDraftChange,
   onAddAttachment,
+  onSelectWorkspace,
+  onResetWorkspace,
   onIterate,
   onSelectAsset,
   onBackHome,
@@ -211,8 +259,11 @@ function Workspace({
   selectedAssetId: string;
   events: AgentEvent[];
   phase: AgentPhase;
+  workspace: WorkspaceInfo;
   onDraftChange: (content: string) => void;
   onAddAttachment: () => void;
+  onSelectWorkspace: () => void;
+  onResetWorkspace: () => void;
   onIterate: () => void;
   onSelectAsset: (assetId: string) => void;
   onBackHome: () => void;
@@ -231,7 +282,8 @@ function Workspace({
           onAddAttachment={onAddAttachment}
           onSubmit={onIterate}
         />
-        <ProjectSnapshot project={project} />
+        <WorkspacePicker compact workspace={workspace} onSelectWorkspace={onSelectWorkspace} onResetWorkspace={onResetWorkspace} />
+        <ProjectSnapshot project={project} workspace={workspace} />
       </aside>
 
       <section className="agent-workspace">
@@ -260,6 +312,37 @@ function Workspace({
           </div>
         </section>
       </section>
+    </section>
+  );
+}
+
+function WorkspacePicker({
+  compact = false,
+  workspace,
+  onSelectWorkspace,
+  onResetWorkspace,
+}: {
+  compact?: boolean;
+  workspace: WorkspaceInfo;
+  onSelectWorkspace: () => void;
+  onResetWorkspace: () => void;
+}) {
+  const usesDefault = workspace.path === workspace.defaultPath;
+  return (
+    <section className={`workspace-picker ${compact ? "compact" : ""}`}>
+      <div>
+        <h2>Workspace folder</h2>
+        <p>{workspace.path}</p>
+        <small>{usesDefault ? "Default local workspace" : "Custom local workspace"}</small>
+      </div>
+      <div className="workspace-actions">
+        <button className="secondary-button" type="button" onClick={onSelectWorkspace}>
+          Choose folder
+        </button>
+        <button className="ghost-button" type="button" onClick={onResetWorkspace}>
+          Use default
+        </button>
+      </div>
     </section>
   );
 }
@@ -414,13 +497,17 @@ function AssetsViewer({
   );
 }
 
-function ProjectSnapshot({ project }: { project: GameProjectManifest | null }) {
+function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest | null; workspace: WorkspaceInfo }) {
   return (
     <section className="project-snapshot">
       <h2>Local project</h2>
       <dl>
         <div>
-          <dt>Workspace</dt>
+          <dt>Root</dt>
+          <dd>{workspace.path}</dd>
+        </div>
+        <div>
+          <dt>Project</dt>
           <dd>{project?.workspacePath ?? "projects/new-game"}</dd>
         </div>
         <div>
