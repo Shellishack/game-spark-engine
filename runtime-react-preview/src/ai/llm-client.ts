@@ -64,12 +64,10 @@ type LLMProjectResponse = {
 };
 
 const engineReference = [
-  'Import Phaser helpers from "@runtime/phaser-2d".',
-  "Available exports: PhaserGame, createArcadeScene, Phaser.",
-  "PhaserGame props: width, height, backgroundColor, scene, config, className.",
-  "createArcadeScene accepts { preload(scene, Phaser), create(scene, Phaser), update(scene, time, delta, Phaser) }.",
-  "Use Phaser scene APIs for display objects, input, arcade physics, text, tweens, timers, and collisions.",
-  'A valid entry usually imports: import { PhaserGame, createArcadeScene } from "@runtime/phaser-2d";',
+  "Build the playable surface with React and browser-native rendering primitives.",
+  "Use canvas or DOM elements directly for simple 2D prototypes.",
+  "Keep controls, state, collision, scoring, and win/lose logic inside the returned source files.",
+  "Do not depend on runtime helper modules.",
 ].join("\n");
 
 export async function generateProjectWithOpenAIKey(args: GenerateProjectArgs): Promise<RuntimeProject> {
@@ -91,10 +89,10 @@ export async function generateProjectWithOpenAIKey(args: GenerateProjectArgs): P
             "Use absolute paths like /src/App.tsx and /src/scenes/Level.ts.",
             "The entry file must default-export a React component.",
             "React is available as a global named React, so code may use React.useMemo/useState without importing React.",
-            "Do not import npm packages other than react, react-dom, react-dom/client, phaser, or @runtime/phaser-2d.",
+            "Do not import npm packages other than react, react-dom, or react-dom/client.",
             "Do not use browser APIs that require permissions, network, backend services, storage, or Node.js.",
             "Make a complete playable 2D game with clear controls, score/state, and win/lose or progression.",
-            "Use Phaser through PhaserGame/createArcadeScene and keep generated code compact and readable.",
+            "Keep generated code compact and readable.",
             engineReference,
           ].join("\n"),
         },

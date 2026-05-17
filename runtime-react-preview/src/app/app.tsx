@@ -6,6 +6,7 @@ import {
   publishedGames,
   spriteEmotions,
 } from "../data/codex-pipeline";
+import { buildPromptFromTemplate, gameCreationTemplates } from "../data/game-templates";
 import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
 import type {
   AgentEvent,
@@ -29,52 +30,8 @@ const phaseLabels: Record<AgentPhase, string> = {
   error: "Error",
 };
 
-const supportedGameTypes = ["Platformer", "Top down RPG", "Isometric strategy", "First person shooter"];
 const supportedStyles = ["2D", "HD2D", "3D"];
-const categoryTemplates = [
-  {
-    title: "Classic RPG",
-    description: "Party progression, quests, towns, encounters, and loot.",
-    icon: "RP",
-    type: "Top down RPG",
-  },
-  {
-    title: "Roleplay Sandbox",
-    description: "NPC relationships, factions, choices, and emergent scenes.",
-    icon: "RS",
-    type: "Top down RPG",
-  },
-  {
-    title: "Storytelling Adventure",
-    description: "Dialogue, branching events, cutscenes, and character arcs.",
-    icon: "SA",
-    type: "Top down RPG",
-  },
-  {
-    title: "Arcane Roguelike",
-    description: "Chambers, relics, bosses, and run modifiers.",
-    icon: "AR",
-    type: "Top down RPG",
-  },
-  {
-    title: "Cozy Builder",
-    description: "Rooms, residents, resources, and quests.",
-    icon: "CB",
-    type: "Isometric strategy",
-  },
-  {
-    title: "Tactical Arena",
-    description: "Grid combat, enemy waves, cover, and tuning.",
-    icon: "TA",
-    type: "First person shooter",
-  },
-  {
-    title: "Puzzle Platformer",
-    description: "Physics toys, level grammar, and checkpoints.",
-    icon: "PP",
-    type: "Platformer",
-  },
-];
+const supportedGameTypes = Array.from(new Set(gameCreationTemplates.map((template) => template.type)));
 const randomGameIdeas = [
   {
     title: "Rainy Neon Courier",
@@ -168,6 +125,7 @@ export default function App() {
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [newProjectName, setNewProjectName] = useState("Lantern Grove");
   const [projectNameError, setProjectNameError] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState(gameCreationTemplates[0]?.id ?? "");
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectSummary[]>([]);
   const [previewableProjectIds, setPreviewableProjectIds] = useState<Set<string>>(new Set());
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
@@ -255,7 +213,8 @@ export default function App() {
   );
 
   async function startRun(mode: CodexRunRequest["mode"], explicitIntent?: CodexRunRequest["workflowIntent"], overrides?: { prompt?: string; projectName?: string }) {
-    const prompt = overrides?.prompt ?? promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
+    const draftPrompt = overrides?.prompt ?? promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
+    const prompt = mode === "create" && !overrides?.prompt ? buildPromptFromTemplate(selectedTemplateId, draftPrompt) : draftPrompt;
     const requestedProjectName = overrides?.projectName?.trim() || newProjectName.trim() || titleFromPrompt(prompt);
     if (mode === "create") {
       const duplicate = findDuplicateProject(requestedProjectName, workspaceProjects);
@@ -472,6 +431,8 @@ export default function App() {
             workspaceProjects={workspaceProjects}
             projectName={newProjectName}
             projectNameError={projectNameError}
+            selectedTemplateId={selectedTemplateId}
+            onTemplateChange={setSelectedTemplateId}
             onProjectNameChange={(value) => {
               setProjectNameError("");
               setNewProjectName(value);
@@ -658,6 +619,8 @@ type PromptComposerProps = {
     onChange: (value: string) => void;
     error?: string;
   };
+  selectedTemplateId?: string;
+  onTemplateChange?: (templateId: string) => void;
   workspaceControls?: {
     workspace: WorkspaceInfo;
     onSelectWorkspace: () => void;
@@ -681,6 +644,8 @@ function Home(
     workspaceProjects: WorkspaceProjectSummary[];
     projectName: string;
     projectNameError: string;
+    selectedTemplateId: string;
+    onTemplateChange: (templateId: string) => void;
     onProjectNameChange: (value: string) => void;
   },
 ) {
@@ -741,6 +706,8 @@ function Home(
               onSelectWorkspace: props.onSelectWorkspace,
               onResetWorkspace: props.onResetWorkspace,
             }}
+            selectedTemplateId={props.selectedTemplateId}
+            onTemplateChange={props.onTemplateChange}
             promptBlocks={props.promptBlocks}
             actionLabel="Generate game"
             onDraftChange={props.onDraftChange}
@@ -865,8 +832,8 @@ function RandomIdeas({
 function SupportedTypes() {
   const pageSize = 3;
   const [page, setPage] = useState(0);
-  const pageCount = Math.ceil(categoryTemplates.length / pageSize);
-  const visibleTemplates = categoryTemplates.slice(page * pageSize, page * pageSize + pageSize);
+  const pageCount = Math.ceil(gameCreationTemplates.length / pageSize);
+  const visibleTemplates = gameCreationTemplates.slice(page * pageSize, page * pageSize + pageSize);
 
   return (
     <section className="template-band" aria-label="Game type templates">
@@ -878,7 +845,7 @@ function SupportedTypes() {
       </div>
       <div className="template-grid">
         {visibleTemplates.map((template) => (
-          <article className="template-card" key={template.title}>
+          <article className="template-card" key={template.id}>
             <div className="template-icon">{template.icon}</div>
             <div>
               <h3>{template.title}</h3>
@@ -1184,6 +1151,8 @@ function PromptComposer({
   compact = false,
   showGameSelectors = false,
   projectNameControls,
+  selectedTemplateId,
+  onTemplateChange,
   workspaceControls,
   promptBlocks,
   actionLabel,
@@ -1191,8 +1160,8 @@ function PromptComposer({
   onAddAttachment,
   onSubmit,
 }: PromptComposerProps) {
-  const [selectedTemplate, setSelectedTemplate] = useState(categoryTemplates[0]?.title ?? "");
   const [selectedStyle, setSelectedStyle] = useState(supportedStyles[1] ?? supportedStyles[0] ?? "");
+  const activeTemplateId = selectedTemplateId ?? gameCreationTemplates[0]?.id ?? "";
   const draft = promptBlocks.find((block): block is Extract<PromptBlock, { type: "text" }> => block.id === "draft" && block.type === "text");
   return (
     <section className={`composer ${compact ? "compact" : ""}`}>
@@ -1247,14 +1216,14 @@ function PromptComposer({
               <label>
                 <span>Template</span>
                 <select
-                  value={selectedTemplate}
+                  value={activeTemplateId}
                   onChange={(event) => {
-                    logInteraction("composer_template_selected", { template: event.target.value });
-                    setSelectedTemplate(event.target.value);
+                    logInteraction("composer_template_selected", { templateId: event.target.value });
+                    onTemplateChange?.(event.target.value);
                   }}
                 >
-                  {categoryTemplates.map((template) => (
-                    <option key={template.title} value={template.title}>
+                  {gameCreationTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
                       {template.title}
                     </option>
                   ))}

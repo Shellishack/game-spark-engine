@@ -58,15 +58,16 @@ Always maintain `manifest.json`. It is the UI contract.
    - Make gameplay first: goals, verbs, feedback, challenge, progression, and iteration hooks.
 
 5. **Generate assets**
-   - 2D characters: create one 1024x1024 PNG sprite sheet per emotion.
-   - Required emotions: `idle`, `walk`, `laugh`, `confused`, `sad`, `angry`, `surprised`.
-   - Sprite sheet layout: 4 columns x 3 rows, 12 frames.
-   - Naming: `[character]_[emotion].png`, for example `cat_idle.png`.
-   - 3D world/props: use the image-blaster workflow when available and save generated model/scene outputs under `assets/models/` or `assets/scenes/`.
-   - Asset generation is not complete until the generated assets are visibly used by the runtime. Do not satisfy this step by writing files and manifest entries only.
+   - Follow `references/asset-generation.md`.
+   - Follow `references/game-quality-bar.md` for genre-specific acceptance criteria.
+   - Use Image 2 for 2D character sprite sheets.
+   - Use the vendored `skills/image-blaster/` workflow for 3D world, model, and scene assets.
+   - Asset generation is not complete until generated assets are visibly used by the runtime. Do not satisfy this step by writing files and manifest entries only.
+   - Do not mark a game ready when requested generated assets are replaced by fallback drawings or procedural primitives. Record the run as not-ready or ready-with-blockers and name the blocked generator.
 
 6. **Write game code**
    - Use PlayCanvas scripts in JavaScript.
+   - Use snippets from `scripts/` when creating generated game objects.
    - Keep systems modular: player, camera, interactions, NPCs, objectives, inventory/progression, world events.
    - Keep generated runtime code readable and editable.
    - Bind every generated character sprite sheet that is part of the current playable scene to a textured billboard material and animate frames from the 4x3 sheet.
@@ -76,9 +77,13 @@ Always maintain `manifest.json`. It is the UI contract.
 
 7. **Build and validate**
    - Produce or update a playable local build under `build/`.
+   - Do not start Python, `python -m http.server`, or any ad hoc preview server. The Electron app owns preview serving through its local Node/Electron bridge.
+   - A build means files are written to disk and assets are copied or referenced correctly; serving is outside the agent workflow.
    - Validate that entry files exist, assets referenced in code exist, `manifest.json` matches disk, and generated assets are referenced by runtime code.
    - Treat manifest-only assets as incomplete unless they are explicitly marked as planned placeholders.
    - The run is not ready if generated sprite sheets are not used for visible characters or generated 3D assets are not loaded for claimed generated environments.
+   - Run `node <skill-root>/scripts/validate-generated-game.mjs <project-root>` when available, and copy the JSON summary into `runs/<timestamp>/validation.md`.
+   - If the user prompt asks for a novel adventure, roleplay, story branches, or drag/drop interactions, validate those mechanics against `references/game-quality-bar.md`; do not treat keyboard pickup/drop as satisfying mouse or pointer drag/drop.
    - Record validation in `runs/<timestamp>/validation.md`.
 
 8. **Report**
@@ -104,9 +109,14 @@ Always maintain `manifest.json`. It is the UI contract.
 }
 ```
 
-Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`.
+Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`. Use `kind: "sprite"` for sprite sheets.
 
 ## References
 
+For asset generation, read `references/asset-generation.md`.
 For detailed design rules, read `references/design-rules.md`.
+For roleplay, storytelling, and interaction acceptance criteria, read `references/game-quality-bar.md`.
+For a concrete failure analysis to avoid repeating, read `references/lantern-grove5-postmortem.md`.
 For project file conventions and validation details, read `references/project-contract.md`.
+For reusable PlayCanvas object snippets, read `scripts/README.md` and the snippet files in `scripts/`.
+For 3D world/object generation, read `../image-blaster/SKILL.md`.

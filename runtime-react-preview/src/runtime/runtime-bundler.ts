@@ -1,6 +1,5 @@
 import * as esbuild from "esbuild-wasm";
 import wasmUrl from "esbuild-wasm/esbuild.wasm?url";
-import { phaser2dSource } from "./phaser-2d-source";
 import type { PreviewBundle, RuntimeAsset, RuntimeProject } from "../types/project-types";
 
 let initialized: Promise<void> | undefined;
@@ -68,12 +67,8 @@ function virtualProjectPlugin(
     name: "runtime-project",
     setup(build) {
       build.onResolve({ filter: /.*/ }, (args) => {
-        if (args.path === "react" || args.path === "react-dom" || args.path === "react-dom/client" || args.path === "phaser") {
+        if (args.path === "react" || args.path === "react-dom" || args.path === "react-dom/client") {
           return { path: args.path, namespace: "runtime-external" };
-        }
-
-        if (args.path === "@runtime/phaser-2d") {
-          return { path: args.path, namespace: "runtime-engine" };
         }
 
         if (args.path === virtualEntry) {
@@ -101,7 +96,6 @@ function virtualProjectPlugin(
           react: "module.exports = React;",
           "react-dom": "module.exports = ReactDOM;",
           "react-dom/client": "module.exports = ReactDOM;",
-          phaser: "module.exports = globalThis.__RuntimePhaser;",
         };
 
         return {
@@ -109,11 +103,6 @@ function virtualProjectPlugin(
           loader: "js",
         };
       });
-
-      build.onLoad({ filter: /.*/, namespace: "runtime-engine" }, () => ({
-        contents: phaser2dSource,
-        loader: "jsx",
-      }));
 
       build.onLoad({ filter: /.*/, namespace: "runtime-files" }, (args) => {
         if (args.path === virtualEntry) {

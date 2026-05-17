@@ -147,7 +147,8 @@ async function startPreviewServer(_event, projectId) {
   const server = http.createServer((request, response) => {
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
     const rawPath = decodeURIComponent(requestUrl.pathname === "/" ? "/build/index.html" : requestUrl.pathname);
-    const filePath = path.resolve(projectRoot, rawPath.replace(/^\/+/, ""));
+    const relativePath = rawPath.replace(/^\/+/, "");
+    const filePath = path.resolve(projectRoot, relativePath);
 
     if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
       response.writeHead(403);
@@ -155,16 +156,7 @@ async function startPreviewServer(_event, projectId) {
       return;
     }
 
-    fssync.stat(filePath, (statError, stat) => {
-      if (statError || !stat.isFile()) {
-        response.writeHead(404);
-        response.end("Not found");
-        return;
-      }
-
-      response.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
-      fssync.createReadStream(filePath).pipe(response);
-    });
+    serveProjectFile(projectRoot, filePath, relativePath, response);
   });
 
   await new Promise((resolve, reject) => {
@@ -177,6 +169,45 @@ async function startPreviewServer(_event, projectId) {
   const url = `http://127.0.0.1:${port}/build/index.html`;
   previewServers.set(safeProjectId, { server, url, port });
   return { ok: true, url, port };
+}
+
+function serveProjectFile(projectRoot, filePath, relativePath, response) {
+  fssync.stat(filePath, (statError, stat) => {
+    if (statError || !stat.isFile()) {
+      const assetFallback = resolveBuildAssetFallback(projectRoot, relativePath);
+      if (assetFallback) {
+        fssync.stat(assetFallback, (fallbackError, fallbackStat) => {
+          if (fallbackError || !fallbackStat.isFile()) {
+            response.writeHead(404);
+            response.end("Not found");
+            return;
+          }
+          response.writeHead(200, { "Content-Type": contentTypeFor(assetFallback) });
+          fssync.createReadStream(assetFallback).pipe(response);
+        });
+        return;
+      }
+
+      if (statError || !stat.isFile()) {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+    }
+
+    response.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
+    fssync.createReadStream(filePath).pipe(response);
+  });
+}
+
+function resolveBuildAssetFallback(projectRoot, relativePath) {
+  const normalized = relativePath.replace(/\\/g, "/");
+  if (!normalized.startsWith("build/assets/")) return "";
+
+  const assetRelativePath = normalized.slice("build/".length);
+  const fallbackPath = path.resolve(projectRoot, assetRelativePath);
+  if (!fallbackPath.startsWith(projectRoot + path.sep)) return "";
+  return fallbackPath;
 }
 
 async function rebuildProjectPreview(_event, projectId) {
@@ -575,10 +606,23 @@ function titleFromProjectId(projectId) {
 
 async function readGameSparkSkill() {
   const skillRoot = path.join(repoRoot, "skills", "game-spark-agent");
+  const imageBlasterRoot = path.join(repoRoot, "skills", "image-blaster");
   const files = [
     path.join(skillRoot, "SKILL.md"),
+    path.join(skillRoot, "references", "asset-generation.md"),
     path.join(skillRoot, "references", "design-rules.md"),
+    path.join(skillRoot, "references", "game-quality-bar.md"),
+    path.join(skillRoot, "references", "lantern-grove5-postmortem.md"),
     path.join(skillRoot, "references", "project-contract.md"),
+    path.join(skillRoot, "scripts", "README.md"),
+    path.join(skillRoot, "scripts", "sprite-character-4x3.js"),
+    path.join(skillRoot, "scripts", "generated-3d-object.js"),
+    path.join(skillRoot, "scripts", "world-labs-environment.js"),
+    path.join(skillRoot, "scripts", "validate-generated-game.mjs"),
+    path.join(imageBlasterRoot, "SKILL.md"),
+    path.join(imageBlasterRoot, "references", "image-blast-project.md"),
+    path.join(imageBlasterRoot, "references", "image-blast-world.md"),
+    path.join(imageBlasterRoot, "references", "image-blast-3d.md"),
   ];
 
   const parts = [];
@@ -607,6 +651,7 @@ async function createCodexPrompt(request) {
     "If WORKFLOW_ALLOWED is false, answer the user conversationally only. Do not write files. Do not create assets. Do not run shell commands. Do not build the game.",
     "If WORKFLOW_ALLOWED is true, you may use the game generation/update workflow as a tool to satisfy the user's request.",
     "The game workflow creates or updates a local PlayCanvas HD2D web game project in this workspace.",
+    "Do not start Python, python -m http.server, or any ad hoc preview server. Electron owns preview serving with its Node HTTP bridge.",
     "When using the workflow, use Codex Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
     "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
     "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",

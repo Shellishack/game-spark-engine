@@ -100,8 +100,7 @@ export const iframeHtml = `<!doctype html>
         padding: 1rem;
         background: #020617;
       }
-      .runtime-game-canvas,
-      .runtime-phaser-host canvas {
+      .runtime-game-canvas {
         box-shadow: 0 18px 50px rgba(2, 6, 23, 0.35);
       }
     </style>
@@ -111,9 +110,8 @@ export const iframeHtml = `<!doctype html>
     <script>
       const React = window.parent.__GameSparkAIReact;
       const ReactDOM = window.parent.__GameSparkAIReactDOM;
-      const Phaser = window.parent.__GameSparkAIPhaser;
       const rootElement = document.getElementById("root");
-      if (!React || !ReactDOM || !Phaser) {
+      if (!React || !ReactDOM) {
         rootElement.innerHTML = '<pre class="preview-error">Preview runtime bridge was not initialized.</pre>';
         throw new Error("Preview runtime bridge was not initialized.");
       }
@@ -131,7 +129,6 @@ export const iframeHtml = `<!doctype html>
           window.__GeneratedApp = undefined;
           window.__RuntimeReact = React;
           window.__RuntimeReactDOM = ReactDOM;
-          window.__RuntimePhaser = Phaser;
           window.__RuntimeAssets = event.data.bundle.assets || {};
 
           // Sandbox loading happens here. The parent sends a bundled virtual

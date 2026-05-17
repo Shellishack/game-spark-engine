@@ -7,7 +7,7 @@ export const defaultPromptBlocks: PromptBlock[] = [
     id: "draft",
     type: "text",
     content:
-      "Create a cozy HD2D forest mystery where a lantern keeper explores a 3D village, talks to NPCs, collects moon shards, and unlocks a bridge before dawn.",
+      "Create a storytelling-heavy HD2D roleplay adventure about two characters, a lantern keeper and a memory archivist, exploring a quiet 3D forest village before dawn. Make it feel like a playable novel adventure: the two characters should take turns speaking in emotional dialogue, reveal secrets through conversation, and react to each other's choices. The player can still move through the 3D scene, inspect and drag/drop meaningful objects such as moon shards, old letters, lantern charms, and bridge keys onto characters or scene targets to trigger new dialogue, emotional sprite changes, memory reveals, and story branches. The goal is to uncover why the bridge is sealed and decide which memory should be restored before dawn.",
   },
 ];
 
