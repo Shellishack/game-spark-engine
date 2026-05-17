@@ -197,6 +197,11 @@ export default function App() {
     path: "~/Game Spark AI",
     defaultPath: "~/Game Spark AI",
   });
+  const projectRef = useRef<GameProjectManifest | null>(project);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   useEffect(() => {
     window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
@@ -204,12 +209,30 @@ export default function App() {
 
   useEffect(() => {
     const offEvent = window.gameSpark?.onCodexEvent?.((event) => {
+      const currentProject = projectRef.current;
+      logInteraction("agent_response", {
+        projectId: currentProject?.id,
+        projectTitle: currentProject?.title,
+        phase: event.phase,
+        title: event.title,
+        content: event.detail,
+        source: "codex-event",
+      });
       setEvents((current) => [...current, event]);
       setPhase(event.phase);
     });
     const offLog = window.gameSpark?.onCodexLog?.((line) => {
       const text = line.trim();
       if (!text) return;
+      const currentProject = projectRef.current;
+      logInteraction("agent_response", {
+        projectId: currentProject?.id,
+        projectTitle: currentProject?.title,
+        phase: "planning",
+        title: "Codex log",
+        content: text,
+        source: "codex-log",
+      });
       setEvents((current) => [
         ...current,
         {
@@ -222,6 +245,14 @@ export default function App() {
       ]);
     });
     const offManifest = window.gameSpark?.onCodexManifest?.((manifest) => {
+      logInteraction("agent_response", {
+        projectId: manifest.id,
+        projectTitle: manifest.title,
+        phase: "ready",
+        title: "Project manifest updated",
+        content: `Updated local project manifest with ${manifest.assets.length} assets.`,
+        source: "codex-manifest",
+      });
       setProject(manifest);
       setSelectedAssetId(manifest.assets[0]?.id ?? "");
       setPhase("ready");
@@ -252,6 +283,28 @@ export default function App() {
       attachments: promptBlocks,
     };
 
+    logInteraction("user_message", {
+      mode,
+      workflowIntent,
+      projectId: nextProject.id,
+      projectTitle: nextProject.title,
+      content: prompt,
+      attachments: promptBlocks
+        .filter((block) => block.type === "file")
+        .map((block) => ({ name: block.name, sizeLabel: block.sizeLabel })),
+      source: overrides ? "shortcut" : "composer",
+    });
+
+    logInteraction("agent_run_submitted", {
+      mode,
+      workflowIntent,
+      projectId: nextProject.id,
+      projectTitle: nextProject.title,
+      promptLength: prompt.length,
+      attachmentCount: promptBlocks.filter((block) => block.type === "file").length,
+      source: overrides ? "shortcut" : "composer",
+    });
+
     setView("workspace");
     setProject(nextProject);
     setPhase(workflowIntent === "game_update" ? "planning" : "idle");
@@ -272,6 +325,14 @@ export default function App() {
         throw new Error(bridgeResult.error || "Codex did not start.");
       }
     } catch (error) {
+      logInteraction("agent_response", {
+        projectId: nextProject.id,
+        projectTitle: nextProject.title,
+        phase: "error",
+        title: "Codex failed",
+        content: error instanceof Error ? error.message : String(error),
+        source: "error",
+      });
       setPhase("error");
       setEvents((current) => [
         ...current,
@@ -289,6 +350,14 @@ export default function App() {
     const mockEvents = createMockRunEvents(request);
     for (const event of mockEvents) {
       await wait(260);
+      logInteraction("agent_response", {
+        projectId: nextProject.id,
+        projectTitle: nextProject.title,
+        phase: event.phase,
+        title: event.title,
+        content: event.detail,
+        source: "mock-event",
+      });
       setEvents((current) => [...current, event]);
       setPhase(event.phase);
     }
@@ -324,6 +393,7 @@ export default function App() {
   }
 
   function openExistingProject(projectTitle: string) {
+    logInteraction("existing_project_opened", { projectTitle });
     const nextProject = createManifest(projectTitle);
     setProject(nextProject);
     setSelectedAssetId(nextProject.assets[0]?.id ?? "");
@@ -342,6 +412,7 @@ export default function App() {
   }
 
   function addMockAttachment() {
+    logInteraction("attachment_added", { name: "reference-moodboard.png", sizeLabel: "2.4 MB" });
     setPromptBlocks((current) => [
       ...current,
       {
@@ -355,7 +426,14 @@ export default function App() {
 
   return (
     <main className={`app-shell ${view === "workspace" ? "is-workspace" : ""}`}>
-      <WindowFrame phase={phase} onHome={() => setView("home")} showHome={view === "workspace"} />
+      <WindowFrame
+        phase={phase}
+        onHome={() => {
+          logInteraction("top_nav_home_clicked", { from: view });
+          setView("home");
+        }}
+        showHome={view === "workspace"}
+      />
       <div className="app-content">
         {view === "home" ? (
           <Home
@@ -386,7 +464,10 @@ export default function App() {
             onResetWorkspace={resetWorkspace}
             onIterate={() => startRun("chat")}
             onInterrupt={interruptCodex}
-            onSelectAsset={setSelectedAssetId}
+            onSelectAsset={(assetId) => {
+              logInteraction("asset_selected", { assetId, projectId: project?.id });
+              setSelectedAssetId(assetId);
+            }}
           />
         )}
       </div>
@@ -396,6 +477,7 @@ export default function App() {
   async function selectWorkspace() {
     const nextWorkspace = await window.gameSpark?.selectWorkspace?.();
     if (nextWorkspace) {
+      logInteraction("workspace_selected", { path: nextWorkspace.path, usesDefault: nextWorkspace.path === nextWorkspace.defaultPath });
       setWorkspace(nextWorkspace);
     }
   }
@@ -403,11 +485,13 @@ export default function App() {
   async function resetWorkspace() {
     const nextWorkspace = await window.gameSpark?.resetWorkspace?.();
     if (nextWorkspace) {
+      logInteraction("workspace_reset", { path: nextWorkspace.path });
       setWorkspace(nextWorkspace);
     }
   }
 
   async function interruptCodex() {
+    logInteraction("agent_interrupt_clicked", { phase, projectId: project?.id });
     const result = await window.gameSpark?.stopCodexRun?.();
     const nextPhase: AgentPhase = result?.ok === false ? "error" : "idle";
     setPhase(nextPhase);
@@ -422,6 +506,10 @@ export default function App() {
       },
     ]);
   }
+}
+
+function logInteraction(type: string, payload: Record<string, unknown> = {}) {
+  window.gameSpark?.logInteraction?.({ type, payload }).catch(() => undefined);
 }
 
 function WindowFrame({ phase, onHome, showHome }: { phase: AgentPhase; onHome: () => void; showHome: boolean }) {
@@ -442,13 +530,34 @@ function WindowFrame({ phase, onHome, showHome }: { phase: AgentPhase; onHome: (
         </nav>
       </div>
       <div className="window-controls">
-        <button type="button" aria-label="Minimize window" onClick={() => window.gameSpark?.minimizeWindow?.()}>
+        <button
+          type="button"
+          aria-label="Minimize window"
+          onClick={() => {
+            logInteraction("window_control_clicked", { action: "minimize" });
+            window.gameSpark?.minimizeWindow?.();
+          }}
+        >
           -
         </button>
-        <button type="button" aria-label="Maximize window" onClick={() => window.gameSpark?.toggleMaximizeWindow?.()}>
+        <button
+          type="button"
+          aria-label="Maximize window"
+          onClick={() => {
+            logInteraction("window_control_clicked", { action: "toggle-maximize" });
+            window.gameSpark?.toggleMaximizeWindow?.();
+          }}
+        >
           □
         </button>
-        <button type="button" aria-label="Close window" onClick={() => window.gameSpark?.closeWindow?.()}>
+        <button
+          type="button"
+          aria-label="Close window"
+          onClick={() => {
+            logInteraction("window_control_clicked", { action: "close" });
+            window.gameSpark?.closeWindow?.();
+          }}
+        >
           ×
         </button>
       </div>
@@ -505,10 +614,23 @@ function Home(
           </div>
         </div>
         <nav className="home-tabs" aria-label="Main page tabs">
-          <button className="active" type="button" onClick={() => document.querySelector(".home-view")?.scrollTo({ top: 0, behavior: "smooth" })}>
+          <button
+            className="active"
+            type="button"
+            onClick={() => {
+              logInteraction("home_tab_clicked", { tab: "home" });
+              document.querySelector(".home-view")?.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          >
             Home
           </button>
-          <button type="button" onClick={() => document.getElementById("home-hub")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          <button
+            type="button"
+            onClick={() => {
+              logInteraction("home_tab_clicked", { tab: "hub" });
+              document.getElementById("home-hub")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
             Hub
           </button>
         </nav>
@@ -593,10 +715,13 @@ function RandomIdeas({
   function shuffleIdea() {
     setIdea((current) => {
       const pool = randomGameIdeas.filter((candidate) => candidate.title !== current.title);
-      return pool[Math.floor(Math.random() * pool.length)] ?? current;
+      const nextIdea = pool[Math.floor(Math.random() * pool.length)] ?? current;
+      logInteraction("random_idea_shuffled", { from: current.title, to: nextIdea.title });
+      return nextIdea;
     });
   }
   function buildIdea() {
+    logInteraction("random_idea_build_clicked", { title: idea.title, promptLength: idea.prompt.length });
     onPickIdea(idea.title);
     onDraftChange(idea.prompt);
     onStartIdea({ projectName: idea.title, prompt: idea.prompt });
@@ -664,7 +789,17 @@ function SupportedTypes() {
         ))}
       </div>
       <div className="template-pagination" aria-label="Template pagination">
-        <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}>
+        <button
+          type="button"
+          onClick={() =>
+            setPage((current) => {
+              const nextPage = Math.max(0, current - 1);
+              logInteraction("template_page_changed", { direction: "previous", from: current + 1, to: nextPage + 1 });
+              return nextPage;
+            })
+          }
+          disabled={page === 0}
+        >
           Previous
         </button>
         <div>
@@ -672,7 +807,17 @@ function SupportedTypes() {
             <span className={index === page ? "active" : ""} key={index} />
           ))}
         </div>
-        <button type="button" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={page === pageCount - 1}>
+        <button
+          type="button"
+          onClick={() =>
+            setPage((current) => {
+              const nextPage = Math.min(pageCount - 1, current + 1);
+              logInteraction("template_page_changed", { direction: "next", from: current + 1, to: nextPage + 1 });
+              return nextPage;
+            })
+          }
+          disabled={page === pageCount - 1}
+        >
           Next
         </button>
       </div>
@@ -777,15 +922,36 @@ function NavigationPanel({
 
       <div className="nav-scroll">
         <nav className="nav-section" aria-label="Project navigation">
-          <button className={`nav-item ${activeTab === "project" ? "active" : ""}`} type="button" onClick={() => setActiveTab("project")}>
+          <button
+            className={`nav-item ${activeTab === "project" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              logInteraction("editor_nav_tab_clicked", { from: activeTab, to: "project", projectId: project?.id });
+              setActiveTab("project");
+            }}
+          >
             <span className="nav-icon">P</span>
             Project
           </button>
-          <button className={`nav-item ${activeTab === "assets" ? "active" : ""}`} type="button" onClick={() => setActiveTab("assets")}>
+          <button
+            className={`nav-item ${activeTab === "assets" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              logInteraction("editor_nav_tab_clicked", { from: activeTab, to: "assets", projectId: project?.id });
+              setActiveTab("assets");
+            }}
+          >
             <span className="nav-icon">A</span>
             Assets management
           </button>
-          <button className={`nav-item ${activeTab === "settings" ? "active" : ""}`} type="button" onClick={() => setActiveTab("settings")}>
+          <button
+            className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              logInteraction("editor_nav_tab_clicked", { from: activeTab, to: "settings", projectId: project?.id });
+              setActiveTab("settings");
+            }}
+          >
             <span className="nav-icon">S</span>
             Settings
           </button>
@@ -949,7 +1115,14 @@ function PromptComposer({
           {projectNameControls ? (
             <label className="project-name-field">
               <span>Project name</span>
-              <input value={projectNameControls.value} onChange={(event) => projectNameControls.onChange(event.target.value)} placeholder="New game project" />
+              <input
+                value={projectNameControls.value}
+                onChange={(event) => {
+                  logInteraction("project_name_changed", { length: event.target.value.length });
+                  projectNameControls.onChange(event.target.value);
+                }}
+                placeholder="New game project"
+              />
             </label>
           ) : null}
           {workspaceControls ? (
@@ -985,7 +1158,13 @@ function PromptComposer({
             <>
               <label>
                 <span>Template</span>
-                <select value={selectedTemplate} onChange={(event) => setSelectedTemplate(event.target.value)}>
+                <select
+                  value={selectedTemplate}
+                  onChange={(event) => {
+                    logInteraction("composer_template_selected", { template: event.target.value });
+                    setSelectedTemplate(event.target.value);
+                  }}
+                >
                   {categoryTemplates.map((template) => (
                     <option key={template.title} value={template.title}>
                       {template.title}
@@ -995,7 +1174,13 @@ function PromptComposer({
               </label>
               <label>
                 <span>Style</span>
-                <select value={selectedStyle} onChange={(event) => setSelectedStyle(event.target.value)}>
+                <select
+                  value={selectedStyle}
+                  onChange={(event) => {
+                    logInteraction("composer_style_selected", { style: event.target.value });
+                    setSelectedStyle(event.target.value);
+                  }}
+                >
                   {supportedStyles.map((style) => (
                     <option key={style} value={style}>
                       {style}
@@ -1120,7 +1305,13 @@ function AssetsViewer({
             <button
               className="asset-group-title"
               type="button"
-              onClick={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !current[group.id] }))}
+              onClick={() =>
+                setCollapsedGroups((current) => {
+                  const collapsed = !current[group.id];
+                  logInteraction("asset_group_toggled", { groupId: group.id, label: group.label, collapsed });
+                  return { ...current, [group.id]: collapsed };
+                })
+              }
               aria-expanded={!collapsedGroups[group.id]}
             >
               <strong>{group.label}</strong>

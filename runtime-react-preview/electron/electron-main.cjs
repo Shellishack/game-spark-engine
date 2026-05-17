@@ -5,7 +5,9 @@ const path = require("node:path");
 
 const isDev = !app.isPackaged;
 const appRoot = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(appRoot, "..");
 let activeCodexChild = null;
+const interactionLogSessions = new Map();
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
@@ -30,6 +32,69 @@ async function readSettings() {
 async function writeSettings(settings) {
   await fs.mkdir(app.getPath("userData"), { recursive: true });
   await fs.writeFile(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
+}
+
+function sanitizeFilePart(value, fallback) {
+  const safe = String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return safe || fallback;
+}
+
+function timestampForFile(date = new Date()) {
+  return date.toISOString().replace(/[:.]/g, "-");
+}
+
+async function interactionLogPath(interaction = {}) {
+  const payload = interaction.payload && typeof interaction.payload === "object" ? interaction.payload : {};
+  const projectName = payload.projectTitle || payload.projectName || payload.projectId || "app";
+  const projectKey = sanitizeFilePart(projectName, "app");
+
+  if (!interactionLogSessions.has(projectKey)) {
+    interactionLogSessions.set(projectKey, {
+      createdAt: new Date().toISOString(),
+      path: path.join(app.getPath("userData"), "logs", `log_${projectKey}_${timestampForFile()}.json`),
+      project: projectName,
+    });
+  }
+
+  return interactionLogSessions.get(projectKey);
+}
+
+async function logInteraction(_event, interaction = {}) {
+  const payload = interaction.payload && typeof interaction.payload === "object" ? interaction.payload : {};
+  const session = await interactionLogPath(interaction);
+  const entry = {
+    id: `interaction-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    type: typeof interaction.type === "string" ? interaction.type : "unknown",
+    payload,
+  };
+  let history = {
+    schemaVersion: 1,
+    app: "Game Spark AI",
+    project: session.project,
+    createdAt: session.createdAt,
+    dataRoot: app.getPath("userData"),
+    settingsPath: settingsPath(),
+    interactions: [],
+  };
+
+  try {
+    history = JSON.parse(await fs.readFile(session.path, "utf8"));
+    if (!Array.isArray(history.interactions)) {
+      history.interactions = [];
+    }
+  } catch {
+    /* A new log file starts with an empty interaction history. */
+  }
+
+  history.interactions.push(entry);
+  await fs.mkdir(path.dirname(session.path), { recursive: true });
+  await fs.writeFile(session.path, JSON.stringify(history, null, 2), "utf8");
+  return { ok: true, path: session.path, entry };
 }
 
 async function workspaceRoot() {
@@ -63,6 +128,7 @@ async function selectWorkspaceFolder() {
   });
 
   await fs.mkdir(result.filePaths[0], { recursive: true });
+  interactionLogSessions.clear();
   return getWorkspaceInfo();
 }
 
@@ -70,6 +136,7 @@ async function resetWorkspaceFolder() {
   const settings = await readSettings();
   delete settings.workspaceRoot;
   await writeSettings(settings);
+  interactionLogSessions.clear();
   return getWorkspaceInfo();
 }
 
@@ -88,10 +155,35 @@ async function ensureProject(request) {
   return { projectDir, runDir, runId };
 }
 
-function createCodexPrompt(request) {
+async function readGameSparkSkill() {
+  const skillRoot = path.join(repoRoot, "skills", "game-spark-agent");
+  const files = [
+    path.join(skillRoot, "SKILL.md"),
+    path.join(skillRoot, "references", "design-rules.md"),
+    path.join(skillRoot, "references", "project-contract.md"),
+  ];
+
+  const parts = [];
+  for (const file of files) {
+    try {
+      parts.push(`--- ${path.relative(repoRoot, file)} ---\n${await fs.readFile(file, "utf8")}`);
+    } catch {
+      /* Skill files are optional in packaged builds until bundled. */
+    }
+  }
+  return parts.join("\n\n");
+}
+
+async function createCodexPrompt(request) {
   const shouldRunWorkflow = request.workflowIntent === "game_update";
+  const skillText = await readGameSparkSkill();
   return [
     "You are the Codex backend for Game Spark AI.",
+    "Use the Game Spark Agent skill below as the source of truth for the core agentic loop.",
+    "",
+    skillText || "Game Spark Agent skill files were not found; follow the embedded fallback instructions.",
+    "",
+    "Fallback instructions:",
     "You are primarily a conversational game creation assistant.",
     "Do not modify files or run game-generation workflows unless WORKFLOW_ALLOWED is true.",
     "If WORKFLOW_ALLOWED is false, answer the user conversationally only. Do not write files. Do not create assets. Do not run shell commands. Do not build the game.",
@@ -110,7 +202,7 @@ function createCodexPrompt(request) {
 
 async function startCodexRun(event, request) {
   const { projectDir, runDir } = await ensureProject(request);
-  const prompt = createCodexPrompt(request);
+  const prompt = await createCodexPrompt(request);
   await fs.writeFile(path.join(runDir, "codex-prompt.md"), prompt, "utf8");
 
   emitAgentEvent(event.sender, {
@@ -329,6 +421,7 @@ ipcMain.handle("codex:stop-run", stopCodexRun);
 ipcMain.handle("workspace:get", getWorkspaceInfo);
 ipcMain.handle("workspace:select", selectWorkspaceFolder);
 ipcMain.handle("workspace:reset", resetWorkspaceFolder);
+ipcMain.handle("interaction:log", logInteraction);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);

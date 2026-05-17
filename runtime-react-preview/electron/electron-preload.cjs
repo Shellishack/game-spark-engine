@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("gameSpark", {
   resetWorkspace() {
     return ipcRenderer.invoke("workspace:reset");
   },
+  logInteraction(interaction) {
+    return ipcRenderer.invoke("interaction:log", interaction);
+  },
   minimizeWindow() {
     return ipcRenderer.invoke("window:minimize");
   },

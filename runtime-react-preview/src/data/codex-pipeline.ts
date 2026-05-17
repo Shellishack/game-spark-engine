@@ -54,8 +54,8 @@ export const codexSystemPrompt = [
 
 export const electronBridgeContract = [
   "Renderer calls window.gameSpark.startCodexRun({ projectId, prompt, mode, attachments }).",
-  "Electron main creates or opens projects/<project-id>/ and writes the run prompt to runs/<timestamp>/prompt.md.",
-  "Electron main launches the local Codex CLI/task runner in the project workspace with the Game Spark system prompt.",
+  "Electron main creates or opens <workspace>/<project-id>/ and writes the run prompt to runs/<timestamp>/prompt.md.",
+  "Electron main launches the local Codex CLI/task runner in the project workspace with the Game Spark Agent skill prompt.",
   "Codex owns generation: sprite prompts, Codex Image 2 calls, image-blaster 3D calls, PlayCanvas code, local files, and build output.",
   "Electron main streams structured phase events to the renderer and reloads manifest.json when the run exits.",
 ].join("\n");

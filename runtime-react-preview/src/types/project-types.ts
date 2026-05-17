@@ -92,6 +92,7 @@ export type GameSparkBridge = {
   getWorkspace?: () => Promise<WorkspaceInfo>;
   selectWorkspace?: () => Promise<WorkspaceInfo>;
   resetWorkspace?: () => Promise<WorkspaceInfo>;
+  logInteraction?: (interaction: { type: string; payload?: Record<string, unknown> }) => Promise<{ ok: boolean; path?: string }>;
   minimizeWindow?: () => Promise<void>;
   toggleMaximizeWindow?: () => Promise<boolean>;
   closeWindow?: () => Promise<void>;
