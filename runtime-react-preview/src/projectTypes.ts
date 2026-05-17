@@ -80,11 +80,21 @@ export type CodexRunStartResult = {
   error?: string;
 };
 
+export type CodexStopResult = {
+  ok: boolean;
+  stopped?: boolean;
+  error?: string;
+};
+
 export type GameSparkBridge = {
   startCodexRun?: (request: CodexRunRequest) => Promise<CodexRunStartResult | GameProjectManifest>;
+  stopCodexRun?: () => Promise<CodexStopResult>;
   getWorkspace?: () => Promise<WorkspaceInfo>;
   selectWorkspace?: () => Promise<WorkspaceInfo>;
   resetWorkspace?: () => Promise<WorkspaceInfo>;
+  minimizeWindow?: () => Promise<void>;
+  toggleMaximizeWindow?: () => Promise<boolean>;
+  closeWindow?: () => Promise<void>;
   listPublishedGames?: () => Promise<PublishedGame[]>;
   publishProject?: (projectId: string) => Promise<GameProjectManifest>;
   onCodexEvent?: (listener: (event: AgentEvent) => void) => () => void;

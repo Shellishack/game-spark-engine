@@ -15,7 +15,7 @@ export const publishedGames: PublishedGame[] = [
   {
     id: "lantern-grove",
     title: "Lantern Grove",
-    description: "HD2D village exploration with sprite characters and a soft-focus PlayCanvas scene.",
+    description: "HD2D village exploration with sprite characters and a soft-focus scene.",
     thumbnailColor: "#3a6f68",
     path: "published/lantern-grove/index.html",
   },
@@ -69,9 +69,9 @@ export function createManifest(title: string): GameProjectManifest {
     style: "HD2D",
     createdAt: now,
     updatedAt: now,
-    workspacePath: `projects/${slug}`,
+    workspacePath: slug,
     playCanvasEntry: "src/main.js",
-    buildPath: `projects/${slug}/build/index.html`,
+    buildPath: `${slug}/build/index.html`,
     publishedPath: `published/${slug}/index.html`,
     promptHistory: [
       {
@@ -85,7 +85,7 @@ export function createManifest(title: string): GameProjectManifest {
         id: "run-1",
         createdAt: now,
         status: "ready",
-        summary: "Generated HD2D scene, placeholder sprite pipeline, PlayCanvas scripts, and local build manifest.",
+        summary: "Generated HD2D scene, placeholder sprite pipeline, game scripts, and local build manifest.",
       },
     ],
     assets: createStarterAssets(slug),
@@ -104,7 +104,7 @@ export function createMockRunEvents(request: CodexRunRequest): AgentEvent[] {
       ),
     ];
   }
-  const title = request.mode === "create" ? "Creating local PlayCanvas project" : "Iterating existing HD2D project";
+  const title = request.mode === "create" ? "Creating local game project" : "Iterating existing HD2D project";
   return [
     event("planning", title, "Codex is expanding the prompt into a gameplay loop, level layout, character list, and asset manifest.", now),
     event(
@@ -121,11 +121,11 @@ export function createMockRunEvents(request: CodexRunRequest): AgentEvent[] {
     ),
     event(
       "writing_code",
-      "Writing PlayCanvas scripts",
+      "Writing game scripts",
       "Creating modular player, camera, interaction, objective, sprite animation, and scene bootstrap scripts.",
       now + 3000,
     ),
-    event("building", "Building playable preview", "Bundling the local web build and refreshing the Electron PlayCanvas viewport.", now + 4000),
+    event("building", "Building playable preview", "Bundling the local web build and refreshing the game preview.", now + 4000),
     event("ready", "Ready to playtest", "The generated HD2D game is available in the viewport and can be published locally.", now + 5000),
   ];
 }
@@ -168,7 +168,7 @@ function createStarterAssets(slug: string): GameProjectAsset[] {
       path: `projects/${slug}/src/main.js`,
       source: "system",
       previewColor: "#516071",
-      usage: "PlayCanvas app bootstrap, camera, lighting, post effects, and game state",
+      usage: "Game bootstrap, camera, lighting, post effects, and game state",
     },
   ];
 }

@@ -3,8 +3,8 @@ I'd like to make a presentation deck for this project.
 
 
 ## Features:
-- daily request (your AI game GF/BF companion will invite you game world generated every day)
-
+- subscribe to daily content push (your AI game GF/BF companion will invite you game world generated every day)
+- customize your game style
 
 ## Future plan:
 - VR support

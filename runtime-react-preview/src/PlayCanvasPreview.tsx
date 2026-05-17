@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as pc from "playcanvas";
 import type { AgentPhase, GameProjectAsset, GameProjectManifest } from "./projectTypes";
 
-export function PlayCanvasPreview({
+export function GamePreview({
   project,
   phase,
   selectedAsset,
@@ -108,8 +108,8 @@ export function PlayCanvasPreview({
   }, [selectedAsset?.previewColor]);
 
   return (
-    <div className="playcanvas-host">
-      <canvas ref={canvasRef} aria-label={`${project?.title ?? "HD2D"} PlayCanvas preview`} />
+    <div className="game-preview-host">
+      <canvas ref={canvasRef} aria-label={`${project?.title ?? "HD2D"} game preview`} />
       {failed ? <FallbackScene phase={phase} selectedAsset={selectedAsset} /> : null}
     </div>
   );

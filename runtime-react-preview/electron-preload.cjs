@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld("gameSpark", {
   startCodexRun(request) {
     return ipcRenderer.invoke("codex:start-run", request);
   },
+  stopCodexRun() {
+    return ipcRenderer.invoke("codex:stop-run");
+  },
   getWorkspace() {
     return ipcRenderer.invoke("workspace:get");
   },
@@ -12,6 +15,15 @@ contextBridge.exposeInMainWorld("gameSpark", {
   },
   resetWorkspace() {
     return ipcRenderer.invoke("workspace:reset");
+  },
+  minimizeWindow() {
+    return ipcRenderer.invoke("window:minimize");
+  },
+  toggleMaximizeWindow() {
+    return ipcRenderer.invoke("window:toggle-maximize");
+  },
+  closeWindow() {
+    return ipcRenderer.invoke("window:close");
   },
   onCodexEvent(listener) {
     const handler = (_event, payload) => listener(payload);

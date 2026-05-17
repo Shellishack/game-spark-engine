@@ -19,6 +19,7 @@
   --radius-a: 18px 24px 16px 22px;
   --radius-b: 24px 16px 23px 17px;
   --radius-c: 14px 22px 19px 16px;
+  --titlebar-height: 48px;
   color: var(--text);
   background: #fff9e8;
   font-family: "Delius Swash Caps", "Comic Sans MS", cursive;
@@ -52,7 +53,9 @@ body::before {
 }
 
 button,
-textarea {
+textarea,
+select,
+input {
   font: inherit;
 }
 
@@ -133,18 +136,136 @@ pre {
   background-size: 28px 28px, auto;
 }
 
+.window-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  height: var(--titlebar-height);
+  border-bottom: 3px solid var(--line);
+  background: var(--paper);
+  -webkit-app-region: drag;
+}
+
+.window-drag-region {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  height: 100%;
+  padding: 0 0.9rem;
+}
+
+.window-drag-region .window-nav {
+  margin-left: 0.25rem;
+}
+
+.window-badge {
+  display: grid;
+  width: 30px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 3px solid var(--line);
+  border-radius: 10px 13px 9px 12px;
+  background: var(--yellow);
+  box-shadow: 2px 3px 0 var(--line);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+.window-drag-region strong,
+.window-drag-region small {
+  display: block;
+}
+
+.window-drag-region strong {
+  color: var(--secondary);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.window-drag-region small {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.window-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.6rem;
+  -webkit-app-region: no-drag;
+}
+
+.window-nav button {
+  height: 30px;
+  border-width: 2px;
+  border-radius: 10px 13px 9px 12px;
+  padding: 0 0.85rem;
+  background: var(--yellow);
+  box-shadow: 2px 3px 0 var(--line);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.window-nav button:hover:not(:disabled) {
+  background: var(--primary-soft);
+  box-shadow: 2px 3px 0 var(--line);
+  transform: translate(-1px, -1px) rotate(-0.5deg);
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.65rem;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  display: grid;
+  width: 32px;
+  height: 30px;
+  place-items: center;
+  border-width: 2px;
+  border-radius: 10px 13px 9px 12px;
+  padding: 0;
+  box-shadow: 2px 3px 0 var(--line);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85rem;
+}
+
+.window-controls button:last-child {
+  background: var(--pink);
+}
+
+.app-content {
+  height: calc(100vh - var(--titlebar-height));
+  overflow: hidden;
+}
+
 .home-view {
   display: grid;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   margin: 0 auto;
   grid-template-rows: auto auto 1fr;
+  justify-items: center;
   gap: 2rem;
   overflow: auto;
   padding: 2rem;
 }
 
 .home-view > .composer {
+  width: min(100%, 1120px);
   max-width: 1120px;
 }
 
@@ -158,15 +279,57 @@ pre {
 }
 
 .brand-row {
+  width: 100%;
   position: sticky;
   top: 1rem;
   z-index: 5;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
   border: 3px solid var(--line);
   border-radius: 22px 18px 24px 16px;
   padding: 1rem;
   background: var(--surface);
   box-shadow: var(--shadow);
   transform: rotate(-0.2deg);
+}
+
+.brand-copy {
+  grid-column: 2;
+  text-align: center;
+}
+
+.brand-row .status-pill {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.brand-row h1 {
+  margin-bottom: 0.35rem;
+  color: var(--secondary);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.headline-carousel {
+  height: 1.55rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.9rem;
+  font-weight: 900;
+  line-height: 1.55rem;
+  text-transform: uppercase;
+}
+
+.headline-carousel div {
+  display: grid;
+  animation: headlineSwap 8s infinite;
+}
+
+.headline-carousel span {
+  height: 1.55rem;
+  white-space: nowrap;
 }
 
 .eyebrow {
@@ -177,6 +340,32 @@ pre {
   font-weight: 900;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+@keyframes headlineSwap {
+  0%,
+  18% {
+    transform: translateY(0);
+  }
+
+  25%,
+  43% {
+    transform: translateY(-1.55rem);
+  }
+
+  50%,
+  68% {
+    transform: translateY(-3.1rem);
+  }
+
+  75%,
+  93% {
+    transform: translateY(-4.65rem);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
 }
 
 .status-pill,
@@ -231,6 +420,61 @@ pre {
   transform: rotate(0.2deg);
 }
 
+.composer-project-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.4fr) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: stretch;
+  border-bottom: 3px dashed var(--line);
+  padding-bottom: 0.75rem;
+}
+
+.project-name-field {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  border: 3px solid var(--line);
+  border-radius: 13px 18px 14px 16px;
+  padding: 0.55rem 0.65rem;
+  background: var(--paper);
+  box-shadow: 3px 4px 0 var(--line);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.project-name-field:hover,
+.workspace-picker.compact.composer-workspace-picker:hover {
+  background: var(--primary-soft);
+  box-shadow: 5px 6px 0 var(--line);
+  transform: translate(-1px, -1px) rotate(-0.35deg);
+}
+
+.project-name-field span {
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.project-name-field input {
+  width: 100%;
+  height: 1.45rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.project-name-field input:focus {
+  outline: 4px dashed #d97706;
+  outline-offset: 4px;
+}
+
 .composer textarea {
   width: 100%;
   min-height: 13rem;
@@ -280,14 +524,256 @@ pre {
 
 .composer-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 0.65rem;
+}
+
+.composer-left-tools,
+.composer-right-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.composer-left-tools label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.composer-left-tools span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.composer-left-tools select {
+  min-width: 158px;
+  height: 40px;
+  border: 3px solid var(--line);
+  border-radius: 13px 18px 14px 16px;
+  padding: 0 2rem 0 0.65rem;
+  background: var(--paper);
+  box-shadow: 3px 4px 0 var(--line);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.composer-left-tools select:focus {
+  outline: 4px dashed #d97706;
+  outline-offset: 4px;
 }
 
 .gallery-band {
   display: grid;
+  width: 100%;
   gap: 1rem;
   max-width: 1480px;
+}
+
+.existing-projects-band {
+  display: grid;
+  width: min(100%, 1120px);
+  gap: 1rem;
+}
+
+.existing-project-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.existing-project-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-b);
+  padding: 0.8rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(-0.25deg);
+}
+
+.existing-project-card:nth-child(2n) {
+  transform: rotate(0.25deg);
+}
+
+.existing-project-thumb {
+  display: grid;
+  width: 72px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 3px solid var(--line);
+  border-radius: 18px 14px 20px 16px;
+  box-shadow: 3px 4px 0 var(--line);
+  color: white;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 900;
+}
+
+.existing-project-card h3 {
+  margin-bottom: 0.25rem;
+  color: var(--secondary);
+  font-size: 1.35rem;
+  line-height: 1.05;
+}
+
+.existing-project-card p {
+  margin-bottom: 0.55rem;
+  color: #35465d;
+  font-family: "Nunito", "Segoe UI", sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.project-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.project-card-meta span {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 0.24rem 0.45rem;
+  background: var(--green);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.project-card-meta span:nth-child(2n) {
+  background: var(--yellow);
+}
+
+.existing-project-card button {
+  align-self: center;
+  padding: 0.62rem 0.85rem;
+}
+
+.template-band {
+  display: grid;
+  width: min(100%, 1120px);
+  gap: 1rem;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-b);
+  padding: 1rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(0.25deg);
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.template-card {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-c);
+  padding: 0.85rem;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(-0.35deg);
+}
+
+.template-card:nth-child(2n) {
+  transform: rotate(0.45deg);
+}
+
+.template-card:nth-child(2n) .template-icon {
+  background: var(--pink);
+}
+
+.template-card:nth-child(3n) .template-icon {
+  background: var(--primary-soft);
+}
+
+.template-icon {
+  display: grid;
+  width: 52px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 3px solid var(--line);
+  border-radius: 16px 20px 14px 22px;
+  background: var(--yellow);
+  box-shadow: var(--shadow-sm);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+.template-card h3 {
+  color: var(--secondary);
+  font-size: 1.35rem;
+  line-height: 1.05;
+}
+
+.template-card p {
+  margin: 0.35rem 0 0.55rem;
+  color: #35465d;
+  font-family: "Nunito", "Segoe UI", sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.32;
+}
+
+.template-card small,
+.support-inline span,
+.support-inline small {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  font-weight: 900;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.template-card small {
+  color: var(--muted);
+}
+
+.support-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  border-top: 3px dashed var(--line);
+  padding-top: 0.85rem;
+}
+
+.support-inline span {
+  color: var(--secondary);
+}
+
+.support-inline small {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 0.3rem 0.5rem;
+  background: var(--green);
+  color: var(--secondary);
+}
+
+.support-inline small:nth-of-type(2n) {
+  background: var(--yellow);
+}
+
+.support-inline small:nth-of-type(3n) {
+  background: var(--primary-soft);
 }
 
 .workspace-picker {
@@ -306,6 +792,60 @@ pre {
   align-items: stretch;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.workspace-picker.compact.composer-workspace-picker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+  width: 100%;
+  border: 3px solid var(--line);
+  border-radius: 13px 18px 14px 16px;
+  padding: 0.55rem 0.65rem;
+  background: var(--paper);
+  box-shadow: 3px 4px 0 var(--line);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.composer-workspace-picker > div:first-child {
+  display: contents;
+}
+
+.composer-workspace-picker h2 {
+  margin: 0;
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.composer-workspace-picker p {
+  margin: 0;
+  overflow: hidden;
+  color: #2b363d;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-workspace-picker small {
+  display: none;
+}
+
+.composer-workspace-picker .workspace-actions {
+  flex-wrap: nowrap;
+  min-width: max-content;
+}
+
+.composer-workspace-picker .workspace-actions button {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.72rem;
 }
 
 .workspace-picker h2 {
@@ -403,7 +943,7 @@ pre {
 
 .workspace-view {
   display: grid;
-  height: 100vh;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   grid-template-columns: 292px minmax(380px, 0.92fr) minmax(520px, 1.35fr);
@@ -415,16 +955,63 @@ pre {
   display: grid;
   align-content: start;
   gap: 0.85rem;
-  height: 100vh;
+  height: 100%;
   min-height: 0;
   overflow: auto;
   padding: 1rem;
 }
 
 .nav-panel {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr);
   border-right: 3px solid var(--line);
   background: rgba(255, 253, 246, 0.86);
+  overflow: hidden;
+  padding-right: 0.65rem;
+}
+
+.nav-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.1rem 0.35rem 1rem 0;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--line) var(--paper);
+  scrollbar-width: thin;
+}
+
+.nav-scroll > * {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.nav-scroll::-webkit-scrollbar,
+.event-list::-webkit-scrollbar,
+.asset-groups::-webkit-scrollbar,
+.asset-list::-webkit-scrollbar {
+  width: 12px;
+}
+
+.nav-scroll::-webkit-scrollbar-track,
+.event-list::-webkit-scrollbar-track,
+.asset-groups::-webkit-scrollbar-track,
+.asset-list::-webkit-scrollbar-track {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+}
+
+.nav-scroll::-webkit-scrollbar-thumb,
+.event-list::-webkit-scrollbar-thumb,
+.asset-groups::-webkit-scrollbar-thumb,
+.asset-list::-webkit-scrollbar-thumb {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--primary);
 }
 
 .chat-panel {
@@ -441,24 +1028,9 @@ pre {
   gap: 0.75rem;
 }
 
-.home-link {
-  width: max-content;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--muted);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.home-link:hover {
-  background: transparent;
-  color: var(--primary);
-  box-shadow: none;
-  transform: none;
+.nav-brand {
+  border-bottom: 3px dashed var(--line);
+  padding-bottom: 0.85rem;
 }
 
 .nav-brand h1 {
@@ -479,8 +1051,6 @@ pre {
 .nav-section {
   display: grid;
   gap: 0.45rem;
-  border-bottom: 3px dashed var(--line);
-  padding-bottom: 0.85rem;
 }
 
 .nav-item {
@@ -526,6 +1096,27 @@ pre {
   align-items: start;
 }
 
+.chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.interrupt-button {
+  min-height: 38px;
+  padding: 0.45rem 0.75rem;
+  background: var(--pink);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.interrupt-button:disabled {
+  background: var(--secondary-soft);
+  box-shadow: 2px 3px 0 var(--line);
+}
+
 .chat-header h2 {
   overflow-wrap: anywhere;
   font-size: 1.25rem;
@@ -562,6 +1153,21 @@ pre {
   border-radius: 0;
   padding: 0;
   background: transparent;
+  box-shadow: none;
+}
+
+.nav-panel .assets-panel,
+.nav-panel .project-snapshot,
+.nav-panel .workspace-picker,
+.nav-panel .project-overview {
+  border-top: 3px dashed var(--line);
+  padding-top: 0.85rem;
+}
+
+.nav-tab-content {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
 }
 
 .nav-panel .section-heading {
@@ -573,6 +1179,67 @@ pre {
   padding: 0;
   background: transparent;
   color: var(--muted);
+}
+
+.project-overview {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.project-overview p {
+  margin: 0;
+  color: var(--secondary);
+  font-family: "Nunito", "Segoe UI", sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.overview-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.overview-stat-grid div {
+  display: grid;
+  gap: 0.15rem;
+  border: 2px solid var(--line);
+  border-radius: 12px 10px 14px 11px;
+  padding: 0.65rem;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+
+.overview-stat-grid strong {
+  overflow-wrap: anywhere;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.98rem;
+  line-height: 1.1;
+}
+
+.overview-stat-grid span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.overview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.overview-tags span {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 0.32rem 0.52rem;
+  background: var(--yellow);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  font-weight: 900;
 }
 
 .event-list {
@@ -645,7 +1312,7 @@ pre {
 
 .viewport-panel {
   min-width: 0;
-  height: 100vh;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   border: 0;
@@ -666,15 +1333,15 @@ pre {
   isolation: isolate;
 }
 
-.playcanvas-host,
-.playcanvas-host canvas {
+.game-preview-host,
+.game-preview-host canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
 
-.playcanvas-host canvas {
+.game-preview-host canvas {
   display: block;
 }
 
@@ -817,11 +1484,72 @@ pre {
   gap: 0.6rem;
 }
 
+.asset-groups,
 .asset-list {
   display: grid;
+}
+
+.asset-groups {
+  gap: 0.75rem;
+  min-height: 0;
+  overflow: auto;
+}
+
+.asset-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.asset-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.asset-group-title:hover:not(:disabled) {
+  background: transparent;
+  color: var(--primary);
+  box-shadow: none;
+  transform: none;
+}
+
+.asset-group-title span {
+  display: grid;
+  min-width: 24px;
+  height: 22px;
+  place-items: center;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--yellow);
+}
+
+.asset-group-title[aria-expanded="false"] {
+  opacity: 0.72;
+}
+
+.asset-list {
   gap: 0.5rem;
   min-height: 0;
   max-height: none;
+  overflow: auto;
+}
+
+.nav-panel .asset-groups {
+  max-height: 236px;
+  padding-right: 0.25rem;
+  scrollbar-gutter: stable;
   overflow: auto;
 }
 
@@ -868,6 +1596,10 @@ pre {
   padding-top: 0.8rem;
 }
 
+.nav-panel .sprite-rule {
+  display: none;
+}
+
 .project-snapshot dl {
   display: grid;
   gap: 0.5rem;
@@ -898,6 +1630,13 @@ pre {
   line-height: 1.35;
 }
 
+.nav-panel .project-snapshot dd {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 @keyframes workspaceIn {
   from {
     opacity: 0;
@@ -916,7 +1655,7 @@ pre {
   }
 
   .workspace-view {
-    height: 100vh;
+    height: 100%;
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr) minmax(320px, 45vh);
     overflow: hidden;
@@ -927,7 +1666,7 @@ pre {
     height: auto;
     min-height: auto;
     border-right: 0;
-    border-bottom: 1px solid #cbd4d9;
+    border-bottom: 3px solid var(--line);
   }
 
   .nav-panel {
@@ -953,11 +1692,50 @@ pre {
     flex-direction: column;
   }
 
+  .brand-row {
+    display: flex;
+  }
+
+  .brand-copy {
+    text-align: left;
+  }
+
+  .brand-row .status-pill {
+    justify-self: auto;
+  }
+
+  .composer-left-tools,
+  .composer-right-tools {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .composer-left-tools select,
+  .composer-right-tools button {
+    width: 100%;
+  }
+
   .workspace-header h1 {
     font-size: 1.55rem;
   }
 
+  .composer-project-row {
+    grid-template-columns: 1fr;
+  }
+
   .game-card {
+    grid-template-columns: 1fr;
+  }
+
+  .existing-project-card {
+    grid-template-columns: 1fr;
+  }
+
+  .existing-project-card button {
+    width: 100%;
+  }
+
+  .template-grid {
     grid-template-columns: 1fr;
   }
 

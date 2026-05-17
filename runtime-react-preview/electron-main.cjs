@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const isDev = !app.isPackaged;
+let activeCodexChild = null;
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
@@ -73,7 +74,7 @@ async function resetWorkspaceFolder() {
 
 async function ensureProject(request) {
   const root = await workspaceRoot();
-  const projectDir = path.join(root, "projects", request.projectId || "new-hd2d-game");
+  const projectDir = path.join(root, request.projectId || "new-hd2d-game");
   const runId = new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.join(projectDir, "runs", runId);
 
@@ -132,6 +133,7 @@ async function startCodexRun(event, request) {
     windowsHide: true,
     shell: process.platform === "win32",
   });
+  activeCodexChild = child;
 
   let stdoutBuffer = "";
   let stderrBuffer = "";
@@ -158,6 +160,7 @@ async function startCodexRun(event, request) {
   });
 
   child.on("error", (error) => {
+    if (activeCodexChild === child) activeCodexChild = null;
     emitAgentEvent(event.sender, {
       phase: "error",
       title: "Codex failed to start",
@@ -166,6 +169,7 @@ async function startCodexRun(event, request) {
   });
 
   child.on("close", async (code) => {
+    if (activeCodexChild === child) activeCodexChild = null;
     const tail = stdoutBuffer.trim();
     if (tail) handleCodexJsonLine(event.sender, tail);
 
@@ -194,6 +198,30 @@ async function startCodexRun(event, request) {
   });
 
   return { ok: true, projectDir, runDir, pid: child.pid };
+}
+
+function stopCodexRun(event) {
+  if (!activeCodexChild) {
+    return { ok: true, stopped: false };
+  }
+
+  try {
+    activeCodexChild.kill();
+    activeCodexChild = null;
+    emitAgentEvent(event.sender, {
+      phase: "idle",
+      title: "Codex stopped",
+      detail: "The active Codex run was interrupted.",
+    });
+    return { ok: true, stopped: true };
+  } catch (error) {
+    emitAgentEvent(event.sender, {
+      phase: "error",
+      title: "Failed to stop Codex",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function emitAgentEvent(sender, event) {
@@ -278,7 +306,9 @@ async function createWindow() {
     height: 980,
     minWidth: 1120,
     minHeight: 760,
-    backgroundColor: "#eceff1",
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#fff9e8",
     webPreferences: {
       preload: path.join(__dirname, "electron-preload.cjs"),
       contextIsolation: true,
@@ -294,9 +324,22 @@ async function createWindow() {
 }
 
 ipcMain.handle("codex:start-run", startCodexRun);
+ipcMain.handle("codex:stop-run", stopCodexRun);
 ipcMain.handle("workspace:get", getWorkspaceInfo);
 ipcMain.handle("workspace:select", selectWorkspaceFolder);
 ipcMain.handle("workspace:reset", resetWorkspaceFolder);
+ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
+ipcMain.handle("window:toggle-maximize", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return false;
+  if (win.isMaximized()) {
+    win.unmaximize();
+    return false;
+  }
+  win.maximize();
+  return true;
+});
+ipcMain.handle("window:close", (event) => BrowserWindow.fromWebContents(event.sender)?.close());
 
 app.whenReady().then(createWindow);
 

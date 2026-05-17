@@ -7,7 +7,7 @@ import {
   spriteEmotions,
   starterProject,
 } from "./codexPipeline";
-import { PlayCanvasPreview } from "./PlayCanvasPreview";
+import { GamePreview } from "./PlayCanvasPreview";
 import type {
   AgentEvent,
   AgentPhase,
@@ -29,6 +29,79 @@ const phaseLabels: Record<AgentPhase, string> = {
   error: "Error",
 };
 
+const supportedGameTypes = ["Platformer", "Top down RPG", "Isometric strategy", "First person shooter"];
+const supportedStyles = ["2D", "HD2D", "3D"];
+const existingProjects = [
+  {
+    id: "lantern-grove",
+    title: "Lantern Grove",
+    description: "Forest mystery prototype with NPCs, moon shards, and a bridge unlock.",
+    updated: "Today",
+    status: "Playable",
+    color: "#3a6f68",
+  },
+  {
+    id: "clockwork-harbor",
+    title: "Clockwork Harbor",
+    description: "Puzzle RPG workspace with harbor machines and timing gates.",
+    updated: "Yesterday",
+    status: "Iterating",
+    color: "#8f6d40",
+  },
+  {
+    id: "skyline-ruins",
+    title: "Skyline Ruins",
+    description: "Isometric traversal test with generated props and billboard actors.",
+    updated: "This week",
+    status: "Draft",
+    color: "#596b9a",
+  },
+];
+const categoryTemplates = [
+  {
+    title: "Classic RPG",
+    description: "Party progression, quests, towns, encounters, and loot.",
+    icon: "RP",
+    type: "Top down RPG",
+  },
+  {
+    title: "Roleplay Sandbox",
+    description: "NPC relationships, factions, choices, and emergent scenes.",
+    icon: "RS",
+    type: "Top down RPG",
+  },
+  {
+    title: "Storytelling Adventure",
+    description: "Dialogue, branching events, cutscenes, and character arcs.",
+    icon: "SA",
+    type: "Top down RPG",
+  },
+  {
+    title: "Arcane Roguelike",
+    description: "Chambers, relics, bosses, and run modifiers.",
+    icon: "AR",
+    type: "Top down RPG",
+  },
+  {
+    title: "Cozy Builder",
+    description: "Rooms, residents, resources, and quests.",
+    icon: "CB",
+    type: "Isometric strategy",
+  },
+  {
+    title: "Tactical Arena",
+    description: "Grid combat, enemy waves, cover, and tuning.",
+    icon: "TA",
+    type: "First person shooter",
+  },
+  {
+    title: "Puzzle Platformer",
+    description: "Physics toys, level grammar, and checkpoints.",
+    icon: "PP",
+    type: "Platformer",
+  },
+];
+
 export default function App() {
   const [view, setView] = useState<"home" | "workspace">("home");
   const [promptBlocks, setPromptBlocks] = useState<PromptBlock[]>(defaultPromptBlocks);
@@ -36,6 +109,7 @@ export default function App() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [phase, setPhase] = useState<AgentPhase>("ready");
   const [selectedAssetId, setSelectedAssetId] = useState(starterProject.assets[0]?.id ?? "");
+  const [newProjectName, setNewProjectName] = useState("Lantern Grove");
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
     path: "~/Game Spark AI",
     defaultPath: "~/Game Spark AI",
@@ -84,7 +158,7 @@ export default function App() {
 
   async function startRun(mode: CodexRunRequest["mode"], explicitIntent?: CodexRunRequest["workflowIntent"]) {
     const prompt = promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
-    const nextProject = project ?? createManifest(titleFromPrompt(prompt));
+    const nextProject = mode === "create" ? createManifest(newProjectName.trim() || titleFromPrompt(prompt)) : project ?? createManifest(titleFromPrompt(prompt));
     const workflowIntent = explicitIntent ?? classifyWorkflowIntent(prompt, mode);
     const request: CodexRunRequest = {
       projectId: nextProject.id,
@@ -154,7 +228,7 @@ export default function App() {
           summary:
             workflowIntent === "game_update"
               ? mode === "create"
-                ? "Generated new HD2D PlayCanvas project scaffold."
+                ? "Generated new HD2D game project scaffold."
                 : "Applied iteration request to local project."
               : "Answered conversationally without changing project files.",
         },
@@ -163,6 +237,15 @@ export default function App() {
     };
     setProject(updatedProject);
     setSelectedAssetId(updatedProject.assets[0]?.id ?? "");
+  }
+
+  function openExistingProject(projectTitle: string) {
+    const nextProject = createManifest(projectTitle);
+    setProject(nextProject);
+    setSelectedAssetId(nextProject.assets[0]?.id ?? "");
+    setPhase("ready");
+    setEvents([]);
+    setView("workspace");
   }
 
   function updateDraft(content: string) {
@@ -188,34 +271,40 @@ export default function App() {
 
   return (
     <main className={`app-shell ${view === "workspace" ? "is-workspace" : ""}`}>
-      {view === "home" ? (
-        <Home
-          promptBlocks={promptBlocks}
-          workspace={workspace}
-          onDraftChange={updateDraft}
-          onAddAttachment={addMockAttachment}
-          onSelectWorkspace={selectWorkspace}
-          onResetWorkspace={resetWorkspace}
-          onStart={() => startRun("create", "game_update")}
-        />
-      ) : (
-        <Workspace
-          promptBlocks={promptBlocks}
-          project={project}
-          selectedAsset={selectedAsset}
-          selectedAssetId={selectedAssetId}
-          events={events}
-          phase={phase}
-          workspace={workspace}
-          onDraftChange={updateDraft}
-          onAddAttachment={addMockAttachment}
-          onSelectWorkspace={selectWorkspace}
-          onResetWorkspace={resetWorkspace}
-          onIterate={() => startRun("chat")}
-          onSelectAsset={setSelectedAssetId}
-          onBackHome={() => setView("home")}
-        />
-      )}
+      <WindowFrame phase={phase} onHome={() => setView("home")} showHome={view === "workspace"} />
+      <div className="app-content">
+        {view === "home" ? (
+          <Home
+            promptBlocks={promptBlocks}
+            workspace={workspace}
+            onDraftChange={updateDraft}
+            onAddAttachment={addMockAttachment}
+            onSelectWorkspace={selectWorkspace}
+            onResetWorkspace={resetWorkspace}
+            onStart={() => startRun("create", "game_update")}
+            onOpenProject={openExistingProject}
+            projectName={newProjectName}
+            onProjectNameChange={setNewProjectName}
+          />
+        ) : (
+          <Workspace
+            promptBlocks={promptBlocks}
+            project={project}
+            selectedAsset={selectedAsset}
+            selectedAssetId={selectedAssetId}
+            events={events}
+            phase={phase}
+            workspace={workspace}
+            onDraftChange={updateDraft}
+            onAddAttachment={addMockAttachment}
+            onSelectWorkspace={selectWorkspace}
+            onResetWorkspace={resetWorkspace}
+            onIterate={() => startRun("chat")}
+            onInterrupt={interruptCodex}
+            onSelectAsset={setSelectedAssetId}
+          />
+        )}
+      </div>
     </main>
   );
 
@@ -232,10 +321,68 @@ export default function App() {
       setWorkspace(nextWorkspace);
     }
   }
+
+  async function interruptCodex() {
+    const result = await window.gameSpark?.stopCodexRun?.();
+    const nextPhase: AgentPhase = result?.ok === false ? "error" : "idle";
+    setPhase(nextPhase);
+    setEvents((current) => [
+      ...current,
+      {
+        id: `interrupt-${Date.now()}`,
+        phase: nextPhase,
+        title: result?.ok === false ? "Interrupt failed" : result?.stopped ? "Codex interrupted" : "No active Codex run",
+        detail: result?.error || (result?.stopped ? "The active agent process was stopped." : "There was no running Codex process to stop."),
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+  }
+}
+
+function WindowFrame({ phase, onHome, showHome }: { phase: AgentPhase; onHome: () => void; showHome: boolean }) {
+  return (
+    <header className="window-frame">
+      <div className="window-drag-region">
+        <span className="window-badge">GS</span>
+        <div>
+          <strong>Game Spark AI</strong>
+          <small>{phaseLabels[phase]}</small>
+        </div>
+        <nav className="window-nav" aria-label="Top navigation">
+          {showHome ? (
+            <button type="button" onClick={onHome}>
+              Home
+            </button>
+          ) : null}
+        </nav>
+      </div>
+      <div className="window-controls">
+        <button type="button" aria-label="Minimize window" onClick={() => window.gameSpark?.minimizeWindow?.()}>
+          -
+        </button>
+        <button type="button" aria-label="Maximize window" onClick={() => window.gameSpark?.toggleMaximizeWindow?.()}>
+          □
+        </button>
+        <button type="button" aria-label="Close window" onClick={() => window.gameSpark?.closeWindow?.()}>
+          ×
+        </button>
+      </div>
+    </header>
+  );
 }
 
 type PromptComposerProps = {
   compact?: boolean;
+  showGameSelectors?: boolean;
+  projectNameControls?: {
+    value: string;
+    onChange: (value: string) => void;
+  };
+  workspaceControls?: {
+    workspace: WorkspaceInfo;
+    onSelectWorkspace: () => void;
+    onResetWorkspace: () => void;
+  };
   promptBlocks: PromptBlock[];
   actionLabel: string;
   onDraftChange: (content: string) => void;
@@ -249,27 +396,47 @@ function Home(
     onSelectWorkspace: () => void;
     onResetWorkspace: () => void;
     onStart: () => void;
+    onOpenProject: (projectTitle: string) => void;
+    projectName: string;
+    onProjectNameChange: (value: string) => void;
   },
 ) {
   return (
     <section className="home-view">
       <div className="brand-row">
-        <div>
-          <p className="eyebrow">Game Spark AI</p>
-          <h1>AI-native HD2D game creation</h1>
+        <div className="brand-copy">
+          <h1>Game Spark AI</h1>
+          <div className="headline-carousel" aria-label="Game Spark AI highlights">
+            <div>
+              <span>Ship astonishing games with Codex</span>
+              <span>Build your dream game in minutes</span>
+              <span>Cursor but for games</span>
+              <span>AI native game engine</span>
+            </div>
+          </div>
         </div>
         <span className="status-pill">Local Codex backend</span>
       </div>
 
-      <WorkspacePicker workspace={props.workspace} onSelectWorkspace={props.onSelectWorkspace} onResetWorkspace={props.onResetWorkspace} />
-
       <PromptComposer
+        showGameSelectors
+        projectNameControls={{
+          value: props.projectName,
+          onChange: props.onProjectNameChange,
+        }}
+        workspaceControls={{
+          workspace: props.workspace,
+          onSelectWorkspace: props.onSelectWorkspace,
+          onResetWorkspace: props.onResetWorkspace,
+        }}
         promptBlocks={props.promptBlocks}
         actionLabel="Generate game"
         onDraftChange={props.onDraftChange}
         onAddAttachment={props.onAddAttachment}
         onSubmit={props.onStart}
       />
+
+      <ExistingProjects onOpenProject={props.onOpenProject} />
 
       <section className="gallery-band" aria-label="Published games">
         <div className="section-heading">
@@ -295,6 +462,70 @@ function Home(
   );
 }
 
+function ExistingProjects({ onOpenProject }: { onOpenProject: (projectTitle: string) => void }) {
+  return (
+    <section className="existing-projects-band" aria-label="Existing projects">
+      <div className="section-heading">
+        <h2>Existing projects</h2>
+        <span>{existingProjects.length} workspaces</span>
+      </div>
+      <div className="existing-project-grid">
+        {existingProjects.map((project) => (
+          <article className="existing-project-card" key={project.id}>
+            <div className="existing-project-thumb" style={{ backgroundColor: project.color }}>
+              <span>{project.title.slice(0, 2)}</span>
+            </div>
+            <div>
+              <h3>{project.title}</h3>
+              <p>{project.description}</p>
+              <div className="project-card-meta">
+                <span>{project.status}</span>
+                <span>{project.updated}</span>
+              </div>
+            </div>
+            <button type="button" onClick={() => onOpenProject(project.title)}>
+              Open
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SupportedTypes() {
+  return (
+    <section className="template-band" aria-label="Game type templates">
+      <div className="section-heading">
+        <h2>Game templates</h2>
+        <span>{categoryTemplates.length} starters</span>
+      </div>
+      <div className="template-grid">
+        {categoryTemplates.map((template) => (
+          <article className="template-card" key={template.title}>
+            <div className="template-icon">{template.icon}</div>
+            <div>
+              <h3>{template.title}</h3>
+              <p>{template.description}</p>
+              <small>{template.type}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="support-inline" aria-label="Supported styles">
+        <span>Supported types</span>
+        {supportedGameTypes.map((type) => (
+          <small key={type}>{type}</small>
+        ))}
+        <span>Styles</span>
+        {supportedStyles.map((style) => (
+          <small key={style}>{style}</small>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Workspace({
   promptBlocks,
   project,
@@ -308,8 +539,8 @@ function Workspace({
   onSelectWorkspace,
   onResetWorkspace,
   onIterate,
+  onInterrupt,
   onSelectAsset,
-  onBackHome,
 }: {
   promptBlocks: PromptBlock[];
   project: GameProjectManifest | null;
@@ -323,8 +554,8 @@ function Workspace({
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
   onIterate: () => void;
+  onInterrupt: () => void;
   onSelectAsset: (assetId: string) => void;
-  onBackHome: () => void;
 }) {
   return (
     <section className="workspace-view">
@@ -336,7 +567,6 @@ function Workspace({
         onSelectAsset={onSelectAsset}
         onSelectWorkspace={onSelectWorkspace}
         onResetWorkspace={onResetWorkspace}
-        onBackHome={onBackHome}
       />
       <AgentChat
         promptBlocks={promptBlocks}
@@ -346,8 +576,9 @@ function Workspace({
         onDraftChange={onDraftChange}
         onAddAttachment={onAddAttachment}
         onIterate={onIterate}
+        onInterrupt={onInterrupt}
       />
-      <PlayCanvasViewport project={project} phase={phase} selectedAsset={selectedAsset} />
+      <GamePreviewPanel project={project} phase={phase} selectedAsset={selectedAsset} />
     </section>
   );
 }
@@ -360,7 +591,6 @@ function NavigationPanel({
   onSelectAsset,
   onSelectWorkspace,
   onResetWorkspace,
-  onBackHome,
 }: {
   project: GameProjectManifest | null;
   workspace: WorkspaceInfo;
@@ -369,39 +599,76 @@ function NavigationPanel({
   onSelectAsset: (assetId: string) => void;
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
-  onBackHome: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"project" | "assets" | "settings">("project");
+
   return (
     <aside className="nav-panel">
       <div className="nav-brand">
-        <button className="home-link" type="button" onClick={onBackHome}>
-          Game Spark AI
-        </button>
         <div>
           <h1>{project?.title ?? "Untitled"}</h1>
           <span>{project?.style ?? "HD2D"} project</span>
         </div>
       </div>
 
-      <nav className="nav-section" aria-label="Project navigation">
-        <button className="nav-item active" type="button">
-          <span className="nav-icon">P</span>
-          Project
-        </button>
-        <button className="nav-item" type="button">
-          <span className="nav-icon">A</span>
-          Assets management
-        </button>
-        <button className="nav-item" type="button">
-          <span className="nav-icon">S</span>
-          Settings
-        </button>
-      </nav>
+      <div className="nav-scroll">
+        <nav className="nav-section" aria-label="Project navigation">
+          <button className={`nav-item ${activeTab === "project" ? "active" : ""}`} type="button" onClick={() => setActiveTab("project")}>
+            <span className="nav-icon">P</span>
+            Project
+          </button>
+          <button className={`nav-item ${activeTab === "assets" ? "active" : ""}`} type="button" onClick={() => setActiveTab("assets")}>
+            <span className="nav-icon">A</span>
+            Assets management
+          </button>
+          <button className={`nav-item ${activeTab === "settings" ? "active" : ""}`} type="button" onClick={() => setActiveTab("settings")}>
+            <span className="nav-icon">S</span>
+            Settings
+          </button>
+        </nav>
 
-      <AssetsViewer assets={assets} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} />
-      <ProjectSnapshot project={project} workspace={workspace} />
-      <WorkspacePicker compact workspace={workspace} onSelectWorkspace={onSelectWorkspace} onResetWorkspace={onResetWorkspace} />
+        <div className="nav-tab-content">
+          {activeTab === "project" ? <ProjectOverview project={project} assets={assets} /> : null}
+          {activeTab === "assets" ? <AssetsViewer assets={assets} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} /> : null}
+          {activeTab === "settings" ? (
+            <>
+              <ProjectSnapshot project={project} workspace={workspace} />
+              <WorkspacePicker compact workspace={workspace} onSelectWorkspace={onSelectWorkspace} onResetWorkspace={onResetWorkspace} />
+            </>
+          ) : null}
+        </div>
+      </div>
     </aside>
+  );
+}
+
+function ProjectOverview({ project, assets }: { project: GameProjectManifest | null; assets: GameProjectAsset[] }) {
+  const counts = groupAssets(assets);
+  return (
+    <section className="project-overview">
+      <div className="section-heading">
+        <h2>Project</h2>
+        <span>{project?.style ?? "Game"}</span>
+      </div>
+      <p>{project ? `${project.title} is ready for chat-driven edits and playtesting.` : "Start a chat with the agent to shape this project."}</p>
+      <div className="overview-stat-grid">
+        <div>
+          <strong>{assets.length}</strong>
+          <span>Files</span>
+        </div>
+        <div>
+          <strong>{project?.style ?? "Game"}</strong>
+          <span>Style</span>
+        </div>
+      </div>
+      <div className="overview-tags">
+        {counts.map((group) => (
+          <span key={group.id}>
+            {group.label} {group.items.length}
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -413,6 +680,7 @@ function AgentChat({
   onDraftChange,
   onAddAttachment,
   onIterate,
+  onInterrupt,
 }: {
   promptBlocks: PromptBlock[];
   events: AgentEvent[];
@@ -421,6 +689,7 @@ function AgentChat({
   onDraftChange: (content: string) => void;
   onAddAttachment: () => void;
   onIterate: () => void;
+  onInterrupt: () => void;
 }) {
   const messagesRef = useRef<HTMLOListElement>(null);
 
@@ -437,7 +706,12 @@ function AgentChat({
           <p className="eyebrow">Agent chat</p>
           <h2>{project?.title ?? "Game project"}</h2>
         </div>
-        <span className={`phase-chip phase-${phase}`}>{phaseLabels[phase]}</span>
+        <div className="chat-actions">
+          <span className={`phase-chip phase-${phase}`}>{phaseLabels[phase]}</span>
+          <button className="interrupt-button" type="button" onClick={onInterrupt} disabled={!isCodexBusy(phase)}>
+            Interrupt
+          </button>
+        </div>
       </header>
 
       <AgentProgress events={events} phase={phase} messagesRef={messagesRef} />
@@ -456,18 +730,23 @@ function AgentChat({
 
 function WorkspacePicker({
   compact = false,
+  className = "",
+  as = "section",
   workspace,
   onSelectWorkspace,
   onResetWorkspace,
 }: {
   compact?: boolean;
+  className?: string;
+  as?: "section" | "div";
   workspace: WorkspaceInfo;
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
 }) {
   const usesDefault = workspace.path === workspace.defaultPath;
+  const Tag = as;
   return (
-    <section className={`workspace-picker ${compact ? "compact" : ""}`}>
+    <Tag className={`workspace-picker ${compact ? "compact" : ""} ${className}`}>
       <div>
         <h2>Workspace folder</h2>
         <p>{workspace.path}</p>
@@ -481,21 +760,46 @@ function WorkspacePicker({
           Default
         </button>
       </div>
-    </section>
+    </Tag>
   );
 }
 
 function PromptComposer({
   compact = false,
+  showGameSelectors = false,
+  projectNameControls,
+  workspaceControls,
   promptBlocks,
   actionLabel,
   onDraftChange,
   onAddAttachment,
   onSubmit,
 }: PromptComposerProps) {
+  const [selectedTemplate, setSelectedTemplate] = useState(categoryTemplates[0]?.title ?? "");
+  const [selectedStyle, setSelectedStyle] = useState(supportedStyles[1] ?? supportedStyles[0] ?? "");
   const draft = promptBlocks.find((block): block is Extract<PromptBlock, { type: "text" }> => block.id === "draft" && block.type === "text");
   return (
     <section className={`composer ${compact ? "compact" : ""}`}>
+      {workspaceControls || projectNameControls ? (
+        <div className="composer-project-row">
+          {projectNameControls ? (
+            <label className="project-name-field">
+              <span>Project name</span>
+              <input value={projectNameControls.value} onChange={(event) => projectNameControls.onChange(event.target.value)} placeholder="New game project" />
+            </label>
+          ) : null}
+          {workspaceControls ? (
+            <WorkspacePicker
+              compact
+              as="div"
+              className="composer-workspace-picker"
+              workspace={workspaceControls.workspace}
+              onSelectWorkspace={workspaceControls.onSelectWorkspace}
+              onResetWorkspace={workspaceControls.onResetWorkspace}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <textarea
         value={draft?.content ?? ""}
         onChange={(event) => onDraftChange(event.target.value)}
@@ -512,12 +816,40 @@ function PromptComposer({
           ))}
       </div>
       <div className="composer-actions">
-        <button className="secondary-button" type="button" onClick={onAddAttachment}>
-          Add file
-        </button>
-        <button type="button" onClick={onSubmit}>
-          {actionLabel}
-        </button>
+        <div className="composer-left-tools">
+          {showGameSelectors ? (
+            <>
+              <label>
+                <span>Template</span>
+                <select value={selectedTemplate} onChange={(event) => setSelectedTemplate(event.target.value)}>
+                  {categoryTemplates.map((template) => (
+                    <option key={template.title} value={template.title}>
+                      {template.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Style</span>
+                <select value={selectedStyle} onChange={(event) => setSelectedStyle(event.target.value)}>
+                  {supportedStyles.map((style) => (
+                    <option key={style} value={style}>
+                      {style}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+        </div>
+        <div className="composer-right-tools">
+          <button className="secondary-button" type="button" onClick={onAddAttachment}>
+            Add file
+          </button>
+          <button type="button" onClick={onSubmit}>
+            {actionLabel}
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -567,7 +899,7 @@ function AgentProgress({
   );
 }
 
-function PlayCanvasViewport({
+function GamePreviewPanel({
   project,
   phase,
   selectedAsset,
@@ -579,14 +911,14 @@ function PlayCanvasViewport({
   return (
     <section className="panel viewport-panel">
       <div className="section-heading">
-        <h2>PlayCanvas viewport</h2>
+        <h2>Game preview</h2>
         <span>{project?.playCanvasEntry ?? "src/main.js"}</span>
       </div>
       <div className="viewport-stage">
-        <PlayCanvasPreview project={project} phase={phase} selectedAsset={selectedAsset} />
+        <GamePreview project={project} phase={phase} selectedAsset={selectedAsset} />
         <div className="viewport-hud">
           <span>{phase === "ready" ? "Playtest ready" : "Generating preview"}</span>
-          <span>PlayCanvas HD2D</span>
+          <span>HD2D preview</span>
         </div>
       </div>
       <div className="control-bar">
@@ -610,28 +942,47 @@ function AssetsViewer({
   selectedAssetId: string;
   onSelectAsset: (assetId: string) => void;
 }) {
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const groups = groupAssets(assets);
   return (
     <section className="panel assets-panel">
       <div className="section-heading">
-        <h2>Assets</h2>
+        <h2>Files</h2>
         <span>{assets.length} indexed</span>
       </div>
-      <div className="asset-list">
-        {assets.slice(0, 8).map((asset) => (
-          <button
-            className={`asset-row ${asset.id === selectedAssetId ? "selected" : ""}`}
-            key={asset.id}
-            type="button"
-            onClick={() => onSelectAsset(asset.id)}
-          >
-            <span className="asset-swatch" style={{ backgroundColor: asset.previewColor }} />
-            <span>
-              <strong>{asset.name}</strong>
-              <small>
-                {asset.kind} / {asset.source}
-              </small>
-            </span>
-          </button>
+      <div className="asset-groups">
+        {groups.map((group) => (
+          <div className="asset-group" key={group.id}>
+            <button
+              className="asset-group-title"
+              type="button"
+              onClick={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !current[group.id] }))}
+              aria-expanded={!collapsedGroups[group.id]}
+            >
+              <strong>{group.label}</strong>
+              <span>{group.items.length}</span>
+            </button>
+            {!collapsedGroups[group.id] ? (
+              <div className="asset-list">
+                {group.items.map((asset) => (
+                  <button
+                    className={`asset-row ${asset.id === selectedAssetId ? "selected" : ""}`}
+                    key={asset.id}
+                    type="button"
+                    onClick={() => onSelectAsset(asset.id)}
+                  >
+                    <span className="asset-swatch" style={{ backgroundColor: asset.previewColor }} />
+                    <span>
+                      <strong>{asset.name}</strong>
+                      <small>
+                        {asset.kind} / {asset.source}
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ))}
       </div>
       <div className="sprite-rule">
@@ -641,6 +992,37 @@ function AssetsViewer({
       </div>
     </section>
   );
+}
+
+function groupAssets(assets: GameProjectAsset[]) {
+  const order = [
+    { id: "scripts", label: "Scripts" },
+    { id: "assets", label: "Assets" },
+    { id: "sounds", label: "Sounds" },
+    { id: "scenes", label: "Scenes" },
+    { id: "other", label: "Other" },
+  ];
+  const buckets = new Map(order.map((group) => [group.id, [] as GameProjectAsset[]]));
+
+  for (const asset of assets) {
+    buckets.get(categoryForAsset(asset))?.push(asset);
+  }
+
+  return order
+    .map((group) => ({
+      ...group,
+      items: buckets.get(group.id) ?? [],
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+function categoryForAsset(asset: GameProjectAsset) {
+  const path = asset.path.toLowerCase();
+  if (asset.kind === "script" || path.endsWith(".js") || path.endsWith(".ts") || path.endsWith(".tsx")) return "scripts";
+  if (path.endsWith(".wav") || path.endsWith(".mp3") || path.endsWith(".ogg") || path.includes("/sounds/") || path.includes("/audio/")) return "sounds";
+  if (asset.kind === "scene" || path.includes("/scenes/") || path.endsWith(".scene.json")) return "scenes";
+  if (asset.kind === "sprite" || asset.kind === "model" || asset.kind === "texture") return "assets";
+  return "other";
 }
 
 function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest | null; workspace: WorkspaceInfo }) {
@@ -654,7 +1036,7 @@ function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest 
         </div>
         <div>
           <dt>Project</dt>
-          <dd>{project?.workspacePath ?? "projects/new-game"}</dd>
+          <dd>{project?.workspacePath ?? "new-game"}</dd>
         </div>
         <div>
           <dt>Build</dt>
@@ -722,6 +1104,10 @@ function classifyWorkflowIntent(prompt: string, mode: CodexRunRequest["mode"]): 
   const hasUpdateVerb = updateVerbs.some((verb) => text.includes(verb));
   const hasGameTarget = gameTargets.some((target) => text.includes(target));
   return hasUpdateVerb && hasGameTarget ? "game_update" : "conversation";
+}
+
+function isCodexBusy(phase: AgentPhase) {
+  return phase === "planning" || phase === "generating_assets" || phase === "generating_world" || phase === "writing_code" || phase === "building";
 }
 
 function titleFromPrompt(prompt: string) {
