@@ -224,6 +224,7 @@ export default function App() {
     const offLog = window.gameSpark?.onCodexLog?.((line) => {
       const text = line.trim();
       if (!text) return;
+      const formattedLog = formatCodexLogForDisplay(text);
       const currentProject = projectRef.current;
       logInteraction("agent_response", {
         projectId: currentProject?.id,
@@ -238,8 +239,8 @@ export default function App() {
         {
           id: `log-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           phase: "planning",
-          title: "Codex log",
-          detail: text,
+          title: formattedLog.title,
+          detail: formattedLog.detail,
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -1409,6 +1410,94 @@ function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest 
 function blockToPromptText(block: PromptBlock) {
   if (block.type === "text") return block.content.trim();
   return `Attached file: ${block.name} (${block.sizeLabel})`;
+}
+
+function formatCodexLogForDisplay(text: string) {
+  const parsed = parseJsonObject(text);
+  if (!parsed) return { title: "Codex log", detail: text };
+
+  if (parsed.type === "thread.started") {
+    return { title: "Codex started", detail: typeof parsed.thread_id === "string" ? `Thread ${parsed.thread_id}` : "Thread started." };
+  }
+
+  if (parsed.type === "turn.started") {
+    return { title: "Codex started", detail: "Started a new agent turn." };
+  }
+
+  if (parsed.type === "item.started" || parsed.type === "item.completed") {
+    return formatCodexItemEvent(parsed);
+  }
+
+  if (typeof parsed.message === "string") {
+    return { title: readableTitle(parsed.type, "Codex message"), detail: parsed.message };
+  }
+
+  return { title: readableTitle(parsed.type, "Codex event"), detail: summarizeObject(parsed) };
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  if (!text.startsWith("{")) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatCodexItemEvent(event: Record<string, unknown>) {
+  const item = event.item && typeof event.item === "object" ? (event.item as Record<string, unknown>) : {};
+  const itemType = typeof item.type === "string" ? item.type : "item";
+  const status = typeof item.status === "string" ? item.status : event.type === "item.started" ? "started" : "completed";
+  const title = readableTitle(itemType, "Codex item");
+
+  if (itemType === "command_execution") {
+    const lines = [`Command ${status}`];
+    if (typeof item.command === "string") lines.push(shortenCommand(item.command));
+    if (typeof item.exit_code === "number") lines.push(`Exit code: ${item.exit_code}`);
+    if (typeof item.aggregated_output === "string" && item.aggregated_output.trim()) {
+      lines.push(cleanCommandOutput(item.aggregated_output));
+    }
+    return { title, detail: lines.join("\n") };
+  }
+
+  if (itemType === "file_change") {
+    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const details = changes
+      .map((change) => {
+        if (!change || typeof change !== "object") return "";
+        const record = change as Record<string, unknown>;
+        const kind = typeof record.kind === "string" ? record.kind : "change";
+        const pathValue = typeof record.path === "string" ? record.path : "";
+        return `${kind}: ${pathValue}`;
+      })
+      .filter(Boolean);
+    return { title, detail: [`File changes ${status}`, ...details].join("\n") };
+  }
+
+  return { title, detail: summarizeObject(item) };
+}
+
+function readableTitle(value: unknown, fallback: string) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  return value.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function shortenCommand(command: string) {
+  return command.replace(/^"[^"]*pwsh\.exe"\s+-Command\s+/i, "").replace(/^powershell(?:\.exe)?\s+-Command\s+/i, "");
+}
+
+function cleanCommandOutput(output: string) {
+  return output.replace(/\u001b\[[0-9;]*m/g, "").replace(/\r\n/g, "\n").trim();
+}
+
+function summarizeObject(value: Record<string, unknown>) {
+  return Object.entries(value)
+    .map(([key, item]) => {
+      if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") return `${key}: ${item}`;
+      return `${key}: ${Array.isArray(item) ? `${item.length} items` : "object"}`;
+    })
+    .join("\n");
 }
 
 function classifyWorkflowIntent(prompt: string, mode: CodexRunRequest["mode"]): CodexRunRequest["workflowIntent"] {
