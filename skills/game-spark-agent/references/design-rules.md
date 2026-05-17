@@ -40,9 +40,11 @@ Useful mechanics:
 HD2D means:
 
 - 3D scene geometry and lighting.
-- 2D sprite-sheet characters as camera-facing billboards.
+- 2D sprite-sheet characters as camera-facing billboards, with generated sprite textures visibly applied in runtime.
 - Cinematic camera, depth layering, bloom/soft focus or depth-of-field approximation.
 - Strong silhouettes and readable interaction targets.
+
+Avoid a finished scene that reads as a primitive blockout. Boxes, cones, spheres, and capsules are acceptable for collision, rough prototypes, or supplemental simple props, but generated 3D scene/object assets should carry the visible environment when available.
 
 ## Level Design
 
@@ -56,4 +58,3 @@ Every level should define:
 - Events triggered by player actions.
 
 Prefer small but complete spaces over large empty maps.
-

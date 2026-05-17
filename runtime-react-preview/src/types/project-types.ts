@@ -110,6 +110,7 @@ export type GameSparkBridge = {
   openPreviewWindow?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   openPreviewInBrowser?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   startPreviewServer?: (projectId: string) => Promise<{ ok: boolean; url?: string; port?: number; error?: string }>;
+  rebuildPreview?: (projectId: string) => Promise<{ ok: boolean; manifest?: GameProjectManifest; previewUrl?: string; error?: string }>;
   minimizeWindow?: () => Promise<void>;
   toggleMaximizeWindow?: () => Promise<boolean>;
   closeWindow?: () => Promise<void>;

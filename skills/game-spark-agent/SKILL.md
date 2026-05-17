@@ -62,16 +62,23 @@ Always maintain `manifest.json`. It is the UI contract.
    - Required emotions: `idle`, `walk`, `laugh`, `confused`, `sad`, `angry`, `surprised`.
    - Sprite sheet layout: 4 columns x 3 rows, 12 frames.
    - Naming: `[character]_[emotion].png`, for example `cat_idle.png`.
-   - 3D world/props: use the image-blaster workflow when available.
+   - 3D world/props: use the image-blaster workflow when available and save generated model/scene outputs under `assets/models/` or `assets/scenes/`.
+   - Asset generation is not complete until the generated assets are visibly used by the runtime. Do not satisfy this step by writing files and manifest entries only.
 
 6. **Write game code**
    - Use PlayCanvas scripts in JavaScript.
    - Keep systems modular: player, camera, interactions, NPCs, objectives, inventory/progression, world events.
    - Keep generated runtime code readable and editable.
+   - Bind every generated character sprite sheet that is part of the current playable scene to a textured billboard material and animate frames from the 4x3 sheet.
+   - Use primitive capsules/boxes for invisible collision, triggers, or early blockout only. If a sprite sheet exists for a visible character, the final visible character must not be a primitive capsule.
+   - Load and instantiate generated 3D model or scene assets for the environment and props when image-blaster output exists. Procedural primitives may supplement generated assets, but they must not be the only visible environment if generated 3D assets were requested or claimed.
+   - If image-blaster is unavailable, record that as a known gap and do not claim generated 3D model assets exist.
 
 7. **Build and validate**
    - Produce or update a playable local build under `build/`.
-   - Validate that entry files exist, assets referenced in code exist, and `manifest.json` matches disk.
+   - Validate that entry files exist, assets referenced in code exist, `manifest.json` matches disk, and generated assets are referenced by runtime code.
+   - Treat manifest-only assets as incomplete unless they are explicitly marked as planned placeholders.
+   - The run is not ready if generated sprite sheets are not used for visible characters or generated 3D assets are not loaded for claimed generated environments.
    - Record validation in `runs/<timestamp>/validation.md`.
 
 8. **Report**
@@ -97,10 +104,9 @@ Always maintain `manifest.json`. It is the UI contract.
 }
 ```
 
-Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, and `usage`.
+Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`.
 
 ## References
 
 For detailed design rules, read `references/design-rules.md`.
 For project file conventions and validation details, read `references/project-contract.md`.
-

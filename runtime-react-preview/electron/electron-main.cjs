@@ -179,6 +179,179 @@ async function startPreviewServer(_event, projectId) {
   return { ok: true, url, port };
 }
 
+async function rebuildProjectPreview(_event, projectId) {
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    return { ok: false, error: "Missing project id." };
+  }
+
+  const safeProjectId = sanitizeFilePart(projectId, "");
+  if (!safeProjectId || safeProjectId !== projectId) {
+    return { ok: false, error: "Invalid project id." };
+  }
+
+  const root = await workspaceRoot();
+  const projectRoot = path.resolve(root, safeProjectId);
+  const sourcePath = path.join(projectRoot, "src", "main.js");
+  const sourceHtmlPath = path.join(projectRoot, "build", "index.html");
+
+  if (!(await fileExists(sourcePath))) {
+    return { ok: false, error: "Game source is missing." };
+  }
+
+  const tempRoot = path.join(app.getPath("temp"), "game-spark-ai", `rebuild-${safeProjectId}-${Date.now()}`);
+  const tempBuild = path.join(tempRoot, "build");
+  const finalBuild = path.join(projectRoot, "build");
+  const backupBuild = path.join(projectRoot, `.build-backup-${Date.now()}`);
+
+  try {
+    await fs.mkdir(tempBuild, { recursive: true });
+    const source = rewriteSourceForBuild(await fs.readFile(sourcePath, "utf8"));
+    await fs.writeFile(path.join(tempBuild, "main.js"), source, "utf8");
+    await copyIfExists(path.join(projectRoot, "assets"), path.join(tempBuild, "assets"));
+
+    const html = (await fileExists(sourceHtmlPath))
+      ? rewriteBuildHtml(await fs.readFile(sourceHtmlPath, "utf8"), safeProjectId)
+      : defaultBuildHtml(titleFromProjectId(safeProjectId));
+    await fs.writeFile(path.join(tempBuild, "index.html"), html, "utf8");
+
+    await stopPreviewServer(safeProjectId);
+    await waitForUnlockedBuild(finalBuild);
+    if (await directoryExists(finalBuild)) {
+      await fs.rename(finalBuild, backupBuild);
+    }
+    await fs.rename(tempBuild, finalBuild);
+    await fs.rm(backupBuild, { recursive: true, force: true });
+
+    const manifest = await touchManifestAfterRebuild(projectRoot);
+    await fs.rm(tempRoot, { recursive: true, force: true });
+    const preview = await startPreviewServer(null, safeProjectId);
+    return { ok: true, manifest, previewUrl: preview.ok ? preview.url : undefined };
+  } catch (error) {
+    if (await directoryExists(backupBuild)) {
+      await fs.rm(finalBuild, { recursive: true, force: true });
+      await fs.rename(backupBuild, finalBuild);
+    }
+    await fs.rm(tempRoot, { recursive: true, force: true });
+    await startPreviewServer(null, safeProjectId).catch(() => undefined);
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function stopPreviewServer(projectId) {
+  const existing = previewServers.get(projectId);
+  if (!existing) return;
+
+  previewServers.delete(projectId);
+  await new Promise((resolve) => {
+    existing.server.close(() => resolve());
+  });
+}
+
+async function waitForUnlockedBuild(buildPath) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      if (!(await directoryExists(buildPath))) return;
+      const probePath = path.join(buildPath, `.rebuild-probe-${Date.now()}`);
+      await fs.writeFile(probePath, "ok", "utf8");
+      await fs.rm(probePath, { force: true });
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+  }
+}
+
+function rewriteBuildHtml(html, projectId) {
+  const rewritten = html
+    .replace(/<script\s+src=["']\.\.\/src\/main\.js["']><\/script>/i, '<script src="./main.js"></script>')
+    .replace(/<script\s+src=["']src\/main\.js["']><\/script>/i, '<script src="./main.js"></script>')
+    .replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, '<script src="./main.js"></script>');
+
+  if (rewritten.includes('<script src="./main.js"></script>')) {
+    return rewritten;
+  }
+
+  return rewritten.replace(/<\/body>/i, '    <script src="./main.js"></script>\n  </body>');
+}
+
+function rewriteSourceForBuild(source) {
+  return source
+    .replace(/const\s+ASSET_ROOT\s*=\s*['"]\.\.['"]\s*;/, "const ASSET_ROOT = '.';")
+    .replace(/(['"`])\.\.\/assets\//g, "$1./assets/");
+}
+
+function defaultBuildHtml(title) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <script src="https://code.playcanvas.com/playcanvas-stable.min.js"></script>
+  </head>
+  <body>
+    <canvas id="application"></canvas>
+    <script src="./main.js"></script>
+  </body>
+</html>
+`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function touchManifestAfterRebuild(projectRoot) {
+  const manifestPath = path.join(projectRoot, "manifest.json");
+  let manifest = {};
+  try {
+    manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+  } catch {
+    manifest = {};
+  }
+
+  const now = new Date().toISOString();
+  manifest.id = typeof manifest.id === "string" ? manifest.id : path.basename(projectRoot);
+  manifest.title = typeof manifest.title === "string" ? manifest.title : titleFromProjectId(manifest.id);
+  manifest.style = typeof manifest.style === "string" ? manifest.style : "HD2D";
+  manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
+  manifest.updatedAt = now;
+  manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : manifest.id;
+  manifest.playCanvasEntry = "src/main.js";
+  manifest.buildPath = `${manifest.id}/build/index.html`;
+  manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
+  manifest.runHistory = Array.isArray(manifest.runHistory) ? manifest.runHistory : [];
+  manifest.assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+  manifest.runHistory.unshift({
+    id: `local-rebuild-${timestampForFile()}`,
+    createdAt: now,
+    status: "ready",
+    summary: "Rebuilt local preview from the current game source without running the agent.",
+  });
+
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  return manifest;
+}
+
+async function copyIfExists(source, destination) {
+  if (await directoryExists(source)) {
+    await fs.cp(source, destination, { recursive: true });
+  }
+}
+
+async function directoryExists(directoryPath) {
+  try {
+    const stat = await fs.stat(directoryPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function contentTypeFor(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".html") return "text/html; charset=utf-8";
@@ -309,7 +482,16 @@ function colorFromProject(value) {
 
 async function ensureProject(request) {
   const root = await workspaceRoot();
-  const projectDir = path.join(root, request.projectId || "new-hd2d-game");
+  const projectId = sanitizeFilePart(request.projectId || "new-hd2d-game", "new-hd2d-game");
+  const projectDir = path.join(root, projectId);
+  if (request.mode === "create") {
+    try {
+      await fs.stat(projectDir);
+      throw new Error(`Project "${request.projectTitle || projectId}" already exists. Choose a different project name.`);
+    } catch (error) {
+      if (error && error.code !== "ENOENT") throw error;
+    }
+  }
   const runId = new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.join(projectDir, "runs", runId);
   const now = new Date().toISOString();
@@ -427,6 +609,10 @@ async function createCodexPrompt(request) {
     "The game workflow creates or updates a local PlayCanvas HD2D web game project in this workspace.",
     "When using the workflow, use Codex Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
     "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
+    "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",
+    "Generated sprite sheets must be loaded as textures, applied to camera-facing billboard characters, and animated from the 4x3 sheet layout. Primitive capsules/boxes may only be invisible collision proxies when sprite sheets exist.",
+    "Generated 3D model or scene assets from image-blaster must be saved under assets/models or assets/scenes and loaded/instantiated in the runtime. If image-blaster is unavailable, record the gap and do not claim generated 3D assets exist.",
+    "Validation must fail or record not-ready status when generated assets are manifest-only or not visible in the game.",
     "",
     `WORKFLOW_ALLOWED: ${shouldRunWorkflow ? "true" : "false"}`,
     `Mode: ${request.mode}`,
@@ -691,6 +877,7 @@ ipcMain.handle("workspace:reset", resetWorkspaceFolder);
 ipcMain.handle("workspace:list-projects", listWorkspaceProjects);
 ipcMain.handle("interaction:log", logInteraction);
 ipcMain.handle("preview:start-server", startPreviewServer);
+ipcMain.handle("preview:rebuild", rebuildProjectPreview);
 ipcMain.handle("preview:open-window", openPreviewWindow);
 ipcMain.handle("preview:open-browser", openPreviewInBrowser);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

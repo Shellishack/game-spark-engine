@@ -167,6 +167,7 @@ export default function App() {
   const [phase, setPhase] = useState<AgentPhase>("idle");
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [newProjectName, setNewProjectName] = useState("Lantern Grove");
+  const [projectNameError, setProjectNameError] = useState("");
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectSummary[]>([]);
   const [previewableProjectIds, setPreviewableProjectIds] = useState<Set<string>>(new Set());
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
@@ -255,8 +256,24 @@ export default function App() {
 
   async function startRun(mode: CodexRunRequest["mode"], explicitIntent?: CodexRunRequest["workflowIntent"], overrides?: { prompt?: string; projectName?: string }) {
     const prompt = overrides?.prompt ?? promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
+    const requestedProjectName = overrides?.projectName?.trim() || newProjectName.trim() || titleFromPrompt(prompt);
+    if (mode === "create") {
+      const duplicate = findDuplicateProject(requestedProjectName, workspaceProjects);
+      if (duplicate) {
+        const message = `A project named "${duplicate.title}" already exists. Choose a different project name.`;
+        setProjectNameError(message);
+        logInteraction("project_create_blocked", {
+          reason: "duplicate_project_name",
+          requestedProjectName,
+          existingProjectId: duplicate.id,
+          existingProjectTitle: duplicate.title,
+        });
+        return;
+      }
+      setProjectNameError("");
+    }
     const nextProject =
-      mode === "create" ? createManifest(overrides?.projectName?.trim() || newProjectName.trim() || titleFromPrompt(prompt)) : project ?? createManifest(titleFromPrompt(prompt));
+      mode === "create" ? createManifest(requestedProjectName) : project ?? createManifest(titleFromPrompt(prompt));
     const workflowIntent = explicitIntent ?? classifyWorkflowIntent(prompt, mode);
     const request: CodexRunRequest = {
       projectId: nextProject.id,
@@ -454,7 +471,11 @@ export default function App() {
             onOpenProject={openExistingProject}
             workspaceProjects={workspaceProjects}
             projectName={newProjectName}
-            onProjectNameChange={setNewProjectName}
+            projectNameError={projectNameError}
+            onProjectNameChange={(value) => {
+              setProjectNameError("");
+              setNewProjectName(value);
+            }}
           />
         ) : (
           <Workspace
@@ -472,6 +493,7 @@ export default function App() {
             onSelectWorkspace={selectWorkspace}
             onResetWorkspace={resetWorkspace}
             onIterate={() => startRun("chat")}
+            onRebuildSource={rebuildPreview}
             onInterrupt={interruptCodex}
             onSelectAsset={(assetId) => {
               logInteraction("asset_selected", { assetId, projectId: project?.id });
@@ -516,6 +538,58 @@ export default function App() {
         timestamp: new Date().toISOString(),
       },
     ]);
+  }
+
+  async function rebuildPreview() {
+    if (!project) return;
+    logInteraction("preview_rebuild_started", { projectId: project.id, projectTitle: project.title });
+    setPhase("building");
+    setEvents((current) => [
+      ...current,
+      {
+        id: `rebuild-start-${Date.now()}`,
+        phase: "building",
+        title: "Rebuilding preview",
+        detail: "Building the playable preview locally from the current game source.",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    const result = await window.gameSpark?.rebuildPreview?.(project.id);
+    if (!result?.ok || !result.manifest) {
+      const detail = result?.error || "The local preview rebuild failed.";
+      logInteraction("preview_rebuild_failed", { projectId: project.id, projectTitle: project.title, error: detail });
+      setPhase("error");
+      setEvents((current) => [
+        ...current,
+        {
+          id: `rebuild-error-${Date.now()}`,
+          phase: "error",
+          title: "Rebuild failed",
+          detail,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      return;
+    }
+
+    const normalizedProject = normalizeManifest(result.manifest);
+    logInteraction("preview_rebuild_completed", { projectId: normalizedProject.id, projectTitle: normalizedProject.title });
+    setProject(normalizedProject);
+    setLastPreviewProject(normalizedProject);
+    setSelectedAssetId(normalizedProject.assets[0]?.id ?? "");
+    setPhase("ready");
+    setEvents((current) => [
+      ...current,
+      {
+        id: `rebuild-done-${Date.now()}`,
+        phase: "ready",
+        title: "Preview rebuilt",
+        detail: "Replaced the currently served preview from a local temp build.",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    refreshWorkspaceProjects();
   }
 }
 
@@ -582,6 +656,7 @@ type PromptComposerProps = {
   projectNameControls?: {
     value: string;
     onChange: (value: string) => void;
+    error?: string;
   };
   workspaceControls?: {
     workspace: WorkspaceInfo;
@@ -605,6 +680,7 @@ function Home(
     onOpenProject: (project: WorkspaceProjectSummary) => void;
     workspaceProjects: WorkspaceProjectSummary[];
     projectName: string;
+    projectNameError: string;
     onProjectNameChange: (value: string) => void;
   },
 ) {
@@ -658,6 +734,7 @@ function Home(
             projectNameControls={{
               value: props.projectName,
               onChange: props.onProjectNameChange,
+              error: props.projectNameError,
             }}
             workspaceControls={{
               workspace: props.workspace,
@@ -873,6 +950,7 @@ function Workspace({
   onSelectWorkspace,
   onResetWorkspace,
   onIterate,
+  onRebuildSource,
   onInterrupt,
   onSelectAsset,
 }: {
@@ -890,6 +968,7 @@ function Workspace({
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
   onIterate: () => void;
+  onRebuildSource: () => void;
   onInterrupt: () => void;
   onSelectAsset: (assetId: string) => void;
 }) {
@@ -914,7 +993,7 @@ function Workspace({
         onIterate={onIterate}
         onInterrupt={onInterrupt}
       />
-      <GamePreviewPanel project={project} previewProject={previewProject} previewableProjectIds={previewableProjectIds} phase={phase} />
+      <GamePreviewPanel project={project} previewProject={previewProject} previewableProjectIds={previewableProjectIds} phase={phase} onRebuildSource={onRebuildSource} />
     </section>
   );
 }
@@ -936,7 +1015,7 @@ function NavigationPanel({
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"project" | "assets" | "settings">("project");
+  const [activeTab, setActiveTab] = useState<"assets" | "settings">("assets");
 
   return (
     <aside className="nav-panel">
@@ -950,17 +1029,6 @@ function NavigationPanel({
       <div className="nav-scroll">
         <nav className="nav-section" aria-label="Project navigation">
           <button
-            className={`nav-item ${activeTab === "project" ? "active" : ""}`}
-            type="button"
-            onClick={() => {
-              logInteraction("editor_nav_tab_clicked", { from: activeTab, to: "project", projectId: project?.id });
-              setActiveTab("project");
-            }}
-          >
-            <span className="nav-icon">P</span>
-            Project
-          </button>
-          <button
             className={`nav-item ${activeTab === "assets" ? "active" : ""}`}
             type="button"
             onClick={() => {
@@ -968,7 +1036,9 @@ function NavigationPanel({
               setActiveTab("assets");
             }}
           >
-            <span className="nav-icon">A</span>
+            <span className="nav-icon" aria-hidden="true">
+              <AssetsIcon />
+            </span>
             Assets management
           </button>
           <button
@@ -979,13 +1049,14 @@ function NavigationPanel({
               setActiveTab("settings");
             }}
           >
-            <span className="nav-icon">S</span>
+            <span className="nav-icon" aria-hidden="true">
+              <SettingsIcon />
+            </span>
             Settings
           </button>
         </nav>
 
         <div className="nav-tab-content">
-          {activeTab === "project" ? <ProjectOverview project={project} assets={assets} /> : null}
           {activeTab === "assets" ? <AssetsViewer assets={assets} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} /> : null}
           {activeTab === "settings" ? (
             <>
@@ -999,33 +1070,21 @@ function NavigationPanel({
   );
 }
 
-function ProjectOverview({ project, assets }: { project: GameProjectManifest | null; assets: GameProjectAsset[] }) {
-  const counts = groupAssets(assets);
+function AssetsIcon() {
   return (
-    <section className="project-overview">
-      <div className="section-heading">
-        <h2>Project</h2>
-        <span>{project?.style ?? "Game"}</span>
-      </div>
-      <p>{project ? `${project.title} is ready for chat-driven edits and playtesting.` : "Start a chat with the agent to shape this project."}</p>
-      <div className="overview-stat-grid">
-        <div>
-          <strong>{assets.length}</strong>
-          <span>Files</span>
-        </div>
-        <div>
-          <strong>{project?.style ?? "Game"}</strong>
-          <span>Style</span>
-        </div>
-      </div>
-      <div className="overview-tags">
-        {counts.map((group) => (
-          <span key={group.id}>
-            {group.label} {group.items.length}
-          </span>
-        ))}
-      </div>
-    </section>
+    <svg viewBox="0 0 24 24" focusable="false">
+      <path d="M6 8.5 12 5l6 3.5v7L12 19l-6-3.5z" />
+      <path d="M6.5 9 12 12.2 17.5 9M12 12.2V18" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" focusable="false">
+      <path d="M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4z" />
+      <path d="M12 3.8v2.1M12 18.1v2.1M5.4 5.4l1.5 1.5M17.1 17.1l1.5 1.5M3.8 12h2.1M18.1 12h2.1M5.4 18.6l1.5-1.5M17.1 6.9l1.5-1.5" />
+    </svg>
   );
 }
 
@@ -1149,7 +1208,9 @@ function PromptComposer({
                   projectNameControls.onChange(event.target.value);
                 }}
                 placeholder="New game project"
+                aria-invalid={Boolean(projectNameControls.error)}
               />
+              {projectNameControls.error ? <small className="project-name-error">{projectNameControls.error}</small> : null}
             </label>
           ) : null}
           {workspaceControls ? (
@@ -1280,11 +1341,13 @@ function GamePreviewPanel({
   previewProject,
   previewableProjectIds,
   phase,
+  onRebuildSource,
 }: {
   project: GameProjectManifest | null;
   previewProject: GameProjectManifest | null;
   previewableProjectIds: Set<string>;
   phase: AgentPhase;
+  onRebuildSource: () => void;
 }) {
   const isWorking = isCodexBusy(phase);
   const currentProjectHasBuild = project ? previewableProjectIds.has(project.id) : false;
@@ -1312,16 +1375,28 @@ function GamePreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [effectivePreviewProject?.id]);
+  }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt]);
+
+  const previewFrameUrl = previewUrl && effectivePreviewProject ? `${previewUrl}?t=${encodeURIComponent(effectivePreviewProject.updatedAt)}` : "";
 
   return (
     <section className="panel viewport-panel">
       <div className="section-heading">
         <h2>Game preview</h2>
-        <span>{effectivePreviewProject?.playCanvasEntry ?? project?.playCanvasEntry ?? "Waiting"}</span>
+        <button
+          className="rebuild-source-button"
+          type="button"
+          disabled={!project || isWorking}
+          onClick={() => {
+            logInteraction("rebuild_source_clicked", { projectId: project?.id, projectTitle: project?.title });
+            onRebuildSource();
+          }}
+        >
+          Rebuild
+        </button>
       </div>
       <div className="viewport-stage">
-        {effectivePreviewProject && previewUrl ? <iframe className="game-preview-frame" src={previewUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
+        {effectivePreviewProject && previewFrameUrl ? <iframe className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
         {!effectivePreviewProject || !previewUrl ? (
           <div className="preview-empty-state">
             {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
@@ -1574,6 +1649,12 @@ function slugifyTitle(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "local-game";
+}
+
+function findDuplicateProject(projectName: string, projects: WorkspaceProjectSummary[]) {
+  const requestedId = slugifyTitle(projectName);
+  const requestedTitle = projectName.trim().toLowerCase();
+  return projects.find((item) => item.id.toLowerCase() === requestedId || item.title.trim().toLowerCase() === requestedTitle);
 }
 
 function formatCodexLogForDisplay(text: string) {

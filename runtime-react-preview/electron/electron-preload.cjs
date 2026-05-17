@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld("gameSpark", {
   startPreviewServer(projectId) {
     return ipcRenderer.invoke("preview:start-server", projectId);
   },
+  rebuildPreview(projectId) {
+    return ipcRenderer.invoke("preview:rebuild", projectId);
+  },
   minimizeWindow() {
     return ipcRenderer.invoke("window:minimize");
   },
