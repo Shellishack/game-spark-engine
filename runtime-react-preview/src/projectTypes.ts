@@ -71,13 +71,24 @@ export type WorkspaceInfo = {
   defaultPath: string;
 };
 
+export type CodexRunStartResult = {
+  ok: boolean;
+  projectDir?: string;
+  runDir?: string;
+  pid?: number;
+  error?: string;
+};
+
 export type GameSparkBridge = {
-  startCodexRun?: (request: CodexRunRequest) => Promise<GameProjectManifest>;
+  startCodexRun?: (request: CodexRunRequest) => Promise<CodexRunStartResult | GameProjectManifest>;
   getWorkspace?: () => Promise<WorkspaceInfo>;
   selectWorkspace?: () => Promise<WorkspaceInfo>;
   resetWorkspace?: () => Promise<WorkspaceInfo>;
   listPublishedGames?: () => Promise<PublishedGame[]>;
   publishProject?: (projectId: string) => Promise<GameProjectManifest>;
+  onCodexEvent?: (listener: (event: AgentEvent) => void) => () => void;
+  onCodexLog?: (listener: (line: string) => void) => () => void;
+  onCodexManifest?: (listener: (manifest: GameProjectManifest) => void) => () => void;
 };
 
 export type RuntimeAsset = {

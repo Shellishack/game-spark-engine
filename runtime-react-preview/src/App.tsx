@@ -47,6 +47,38 @@ export default function App() {
     window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    const offEvent = window.gameSpark?.onCodexEvent?.((event) => {
+      setEvents((current) => [...current, event]);
+      setPhase(event.phase);
+    });
+    const offLog = window.gameSpark?.onCodexLog?.((line) => {
+      const text = line.trim();
+      if (!text) return;
+      setEvents((current) => [
+        ...current,
+        {
+          id: `log-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          phase: "planning",
+          title: "Codex log",
+          detail: text,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    });
+    const offManifest = window.gameSpark?.onCodexManifest?.((manifest) => {
+      setProject(manifest);
+      setSelectedAssetId(manifest.assets[0]?.id ?? "");
+      setPhase("ready");
+    });
+
+    return () => {
+      offEvent?.();
+      offLog?.();
+      offManifest?.();
+    };
+  }, []);
+
   const selectedAsset = useMemo(
     () => project?.assets.find((asset) => asset.id === selectedAssetId) ?? project?.assets[0],
     [project, selectedAssetId],
@@ -67,11 +99,32 @@ export default function App() {
     setPhase("planning");
     setEvents([]);
 
-    const bridgeResult = await window.gameSpark?.startCodexRun?.(request);
-    if (bridgeResult) {
-      setProject(bridgeResult);
-      setPhase("ready");
-      setSelectedAssetId(bridgeResult.assets[0]?.id ?? "");
+    try {
+      const bridgeResult = await window.gameSpark?.startCodexRun?.(request);
+      if (bridgeResult && "assets" in bridgeResult) {
+        setProject(bridgeResult);
+        setPhase("ready");
+        setSelectedAssetId(bridgeResult.assets[0]?.id ?? "");
+        return;
+      }
+      if (bridgeResult?.ok) {
+        return;
+      }
+      if (bridgeResult && !bridgeResult.ok) {
+        throw new Error(bridgeResult.error || "Codex did not start.");
+      }
+    } catch (error) {
+      setPhase("error");
+      setEvents((current) => [
+        ...current,
+        {
+          id: `error-${Date.now()}`,
+          phase: "error",
+          title: "Codex failed",
+          detail: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        },
+      ]);
       return;
     }
 

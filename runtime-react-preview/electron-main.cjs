@@ -105,40 +105,162 @@ async function startCodexRun(event, request) {
   const prompt = createCodexPrompt(request);
   await fs.writeFile(path.join(runDir, "codex-prompt.md"), prompt, "utf8");
 
-  event.sender.send("codex:event", {
+  emitAgentEvent(event.sender, {
     phase: "planning",
     title: "Starting Codex",
     detail: `Workspace: ${projectDir}`,
-    timestamp: new Date().toISOString(),
   });
 
-  const child = spawn("codex", ["exec", "--cwd", projectDir, prompt], {
+  const args = ["exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "-"];
+  const model = process.env.GAME_SPARK_CODEX_MODEL;
+  if (model) {
+    args.splice(args.length - 1, 0, "--model", model);
+  }
+
+  const child = spawn(process.env.GAME_SPARK_CODEX_BIN || "codex", args, {
     cwd: projectDir,
+    env: { ...process.env },
     windowsHide: true,
     shell: process.platform === "win32",
   });
 
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+
+  child.stdin.write(prompt);
+  child.stdin.end();
+
   child.stdout.on("data", (chunk) => {
-    event.sender.send("codex:log", chunk.toString());
+    stdoutBuffer += chunk;
+    let newlineIndex;
+    while ((newlineIndex = stdoutBuffer.indexOf("\n")) >= 0) {
+      const line = stdoutBuffer.slice(0, newlineIndex).trim();
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+      if (line) handleCodexJsonLine(event.sender, line);
+    }
   });
 
   child.stderr.on("data", (chunk) => {
+    stderrBuffer += chunk;
     event.sender.send("codex:log", chunk.toString());
   });
 
-  return new Promise((resolve, reject) => {
-    child.on("error", reject);
-    child.on("close", async (code) => {
-      if (code !== 0) {
-        reject(new Error(`Codex exited with code ${code}`));
-        return;
-      }
-
-      const manifestPath = path.join(projectDir, "manifest.json");
-      const manifestText = await fs.readFile(manifestPath, "utf8");
-      resolve(JSON.parse(manifestText));
+  child.on("error", (error) => {
+    emitAgentEvent(event.sender, {
+      phase: "error",
+      title: "Codex failed to start",
+      detail: error.message,
     });
   });
+
+  child.on("close", async (code) => {
+    const tail = stdoutBuffer.trim();
+    if (tail) handleCodexJsonLine(event.sender, tail);
+
+    if (code !== 0) {
+      emitAgentEvent(event.sender, {
+        phase: "error",
+        title: `Codex exited with code ${code}`,
+        detail: stderrBuffer.trim() || `Command: codex ${args.join(" ")}`,
+      });
+      return;
+    }
+
+    try {
+      const manifestPath = path.join(projectDir, "manifest.json");
+      const manifestText = await fs.readFile(manifestPath, "utf8");
+      event.sender.send("codex:manifest", JSON.parse(manifestText));
+    } catch {
+      /* A successful Codex run may still be planning-only during early MVP work. */
+    }
+
+    emitAgentEvent(event.sender, {
+      phase: "ready",
+      title: "Codex finished",
+      detail: "The run completed. Reloaded the project manifest if Codex wrote one.",
+    });
+  });
+
+  return { ok: true, projectDir, runDir, pid: child.pid };
+}
+
+function emitAgentEvent(sender, event) {
+  sender.send("codex:event", {
+    id: `${event.phase}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    ...event,
+  });
+}
+
+function handleCodexJsonLine(sender, line) {
+  try {
+    const parsed = JSON.parse(line);
+    handleCodexEvent(sender, parsed);
+  } catch {
+    sender.send("codex:log", line);
+  }
+}
+
+function handleCodexEvent(sender, event) {
+  const method = event && typeof event === "object" ? event.method : undefined;
+  const params = event && typeof event === "object" ? event.params : undefined;
+  const type = event && typeof event === "object" ? event.type : undefined;
+
+  if (method === "item/agentMessage/delta") {
+    const delta = params && typeof params.delta === "string" ? params.delta : "";
+    if (delta) sender.send("codex:log", delta);
+    return;
+  }
+
+  if (method === "item/started") {
+    const item = params && params.item;
+    if (item?.type === "toolCall") {
+      emitAgentEvent(sender, {
+        phase: phaseForTool(item.name),
+        title: `Running ${item.name || "tool"}`,
+        detail: "Codex is using a local tool.",
+      });
+    }
+    return;
+  }
+
+  if (type === "item.completed") {
+    const item = event.item;
+    if (item?.type === "tool_call") {
+      emitAgentEvent(sender, {
+        phase: phaseForTool(item.name),
+        title: `Completed ${item.name || "tool"}`,
+        detail: "Codex completed a local tool call.",
+      });
+      return;
+    }
+    if (item?.type === "agent_message" && typeof item.text === "string" && item.text) {
+      sender.send("codex:log", item.text);
+      return;
+    }
+  }
+
+  if (method === "turn/completed" || type === "turn.completed") {
+    emitAgentEvent(sender, {
+      phase: "building",
+      title: "Codex turn completed",
+      detail: "Checking generated project files and manifest.",
+    });
+    return;
+  }
+
+  sender.send("codex:log", JSON.stringify(event));
+}
+
+function phaseForTool(name) {
+  const value = String(name || "").toLowerCase();
+  if (value.includes("image") || value.includes("sprite")) return "generating_assets";
+  if (value.includes("blaster") || value.includes("model") || value.includes("3d")) return "generating_world";
+  if (value.includes("shell") || value.includes("file") || value.includes("patch")) return "writing_code";
+  return "planning";
 }
 
 async function createWindow() {

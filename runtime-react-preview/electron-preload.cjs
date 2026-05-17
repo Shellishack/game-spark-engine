@@ -23,4 +23,9 @@ contextBridge.exposeInMainWorld("gameSpark", {
     ipcRenderer.on("codex:log", handler);
     return () => ipcRenderer.removeListener("codex:log", handler);
   },
+  onCodexManifest(listener) {
+    const handler = (_event, payload) => listener(payload);
+    ipcRenderer.on("codex:manifest", handler);
+    return () => ipcRenderer.removeListener("codex:manifest", handler);
+  },
 });
