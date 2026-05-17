@@ -1,6 +1,8 @@
-const { BrowserWindow, app, dialog, ipcMain, protocol } = require("electron");
+const { BrowserWindow, app, dialog, ipcMain, protocol, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
+const fssync = require("node:fs");
+const http = require("node:http");
 const path = require("node:path");
 
 const isDev = !app.isPackaged;
@@ -8,6 +10,7 @@ const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
 let activeCodexChild = null;
 const interactionLogSessions = new Map();
+const previewServers = new Map();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -20,10 +23,6 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
-
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("disable-software-rasterizer");
 
 function defaultWorkspaceRoot() {
   return path.join(app.getPath("home"), "Game Spark AI");
@@ -121,6 +120,78 @@ async function getWorkspaceInfo() {
     path: await workspaceRoot(),
     defaultPath: defaultWorkspaceRoot(),
   };
+}
+
+async function startPreviewServer(_event, projectId) {
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    return { ok: false, error: "Missing project id." };
+  }
+
+  const safeProjectId = sanitizeFilePart(projectId, "");
+  if (!safeProjectId || safeProjectId !== projectId) {
+    return { ok: false, error: "Invalid project id." };
+  }
+
+  const root = await workspaceRoot();
+  const projectRoot = path.resolve(root, safeProjectId);
+  const indexPath = path.join(projectRoot, "build", "index.html");
+  if (!(await fileExists(indexPath))) {
+    return { ok: false, error: "Playable preview is not ready." };
+  }
+
+  const existing = previewServers.get(safeProjectId);
+  if (existing) {
+    return { ok: true, url: existing.url, port: existing.port };
+  }
+
+  const server = http.createServer((request, response) => {
+    const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+    const rawPath = decodeURIComponent(requestUrl.pathname === "/" ? "/build/index.html" : requestUrl.pathname);
+    const filePath = path.resolve(projectRoot, rawPath.replace(/^\/+/, ""));
+
+    if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
+      response.writeHead(403);
+      response.end("Forbidden");
+      return;
+    }
+
+    fssync.stat(filePath, (statError, stat) => {
+      if (statError || !stat.isFile()) {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+
+      response.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
+      fssync.createReadStream(filePath).pipe(response);
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  const url = `http://127.0.0.1:${port}/build/index.html`;
+  previewServers.set(safeProjectId, { server, url, port });
+  return { ok: true, url, port };
+}
+
+function contentTypeFor(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".js") return "text/javascript; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".json") return "application/json; charset=utf-8";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".wav") return "audio/wav";
+  if (ext === ".ogg") return "audio/ogg";
+  return "application/octet-stream";
 }
 
 function registerProjectProtocol() {
@@ -582,7 +653,7 @@ async function createWindow() {
 }
 
 async function openPreviewWindow(_event, url) {
-  if (typeof url !== "string" || !url.startsWith("game-spark://")) {
+  if (typeof url !== "string" || !url.startsWith("http://127.0.0.1:")) {
     return { ok: false, error: "Invalid preview URL." };
   }
 
@@ -603,6 +674,15 @@ async function openPreviewWindow(_event, url) {
   return { ok: true };
 }
 
+async function openPreviewInBrowser(_event, url) {
+  if (typeof url !== "string" || !url.startsWith("http://127.0.0.1:")) {
+    return { ok: false, error: "Invalid preview URL." };
+  }
+
+  await shell.openExternal(url);
+  return { ok: true };
+}
+
 ipcMain.handle("codex:start-run", startCodexRun);
 ipcMain.handle("codex:stop-run", stopCodexRun);
 ipcMain.handle("workspace:get", getWorkspaceInfo);
@@ -610,7 +690,9 @@ ipcMain.handle("workspace:select", selectWorkspaceFolder);
 ipcMain.handle("workspace:reset", resetWorkspaceFolder);
 ipcMain.handle("workspace:list-projects", listWorkspaceProjects);
 ipcMain.handle("interaction:log", logInteraction);
+ipcMain.handle("preview:start-server", startPreviewServer);
 ipcMain.handle("preview:open-window", openPreviewWindow);
+ipcMain.handle("preview:open-browser", openPreviewInBrowser);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);

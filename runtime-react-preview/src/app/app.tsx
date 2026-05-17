@@ -1291,8 +1291,28 @@ function GamePreviewPanel({
   const previousProjectHasBuild = previewProject ? previewableProjectIds.has(previewProject.id) : false;
   const effectivePreviewProject = previousProjectHasBuild ? previewProject : !isWorking && currentProjectHasBuild ? project : null;
   const hasPreview = Boolean(effectivePreviewProject);
-  const previewUrl = effectivePreviewProject ? buildProjectPreviewUrl(effectivePreviewProject) : "";
+  const [previewUrl, setPreviewUrl] = useState("");
   const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewUrl("");
+
+    if (!effectivePreviewProject) return undefined;
+
+    window.gameSpark
+      ?.startPreviewServer?.(effectivePreviewProject.id)
+      .then((result) => {
+        if (!cancelled && result?.ok && result.url) {
+          setPreviewUrl(result.url);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectivePreviewProject?.id]);
 
   return (
     <section className="panel viewport-panel">
@@ -1301,12 +1321,12 @@ function GamePreviewPanel({
         <span>{effectivePreviewProject?.playCanvasEntry ?? project?.playCanvasEntry ?? "Waiting"}</span>
       </div>
       <div className="viewport-stage">
-        {effectivePreviewProject ? <iframe className="game-preview-frame" src={previewUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
-        {!effectivePreviewProject ? (
+        {effectivePreviewProject && previewUrl ? <iframe className="game-preview-frame" src={previewUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
+        {!effectivePreviewProject || !previewUrl ? (
           <div className="preview-empty-state">
-            {isWorking ? <span className="preview-spinner" aria-hidden="true" /> : null}
-            <strong>{isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
-            <p>{isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
+            {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
+            <strong>{effectivePreviewProject ? "Starting preview server" : isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
+            <p>{effectivePreviewProject ? "Preparing a browser-openable localhost preview." : isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
           </div>
         ) : null}
         <div className="viewport-hud">
@@ -1330,8 +1350,17 @@ function GamePreviewPanel({
         >
           Open in new window
         </button>
-        <button className="secondary-button" type="button" disabled={!hasPreview || isWorking}>
-          Publish local preview
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={!hasPreview || !previewUrl}
+          onClick={() => {
+            if (!previewUrl) return;
+            logInteraction("preview_opened_in_browser", { projectId: effectivePreviewProject?.id, projectTitle: effectivePreviewProject?.title });
+            window.gameSpark?.openPreviewInBrowser?.(previewUrl);
+          }}
+        >
+          Open in browser
         </button>
       </div>
     </section>
@@ -1525,18 +1554,6 @@ function normalizeManifest(manifest: GameProjectManifest): GameProjectManifest {
     runHistory,
     assets,
   };
-}
-
-function buildProjectPreviewUrl(project: GameProjectManifest) {
-  const projectId = project.workspacePath || project.id;
-  const normalizedBuildPath = (project.buildPath || "build/index.html").replace(/\\/g, "/").replace(/^\/+/, "");
-  const projectPrefix = `${projectId}/`;
-  const relativeBuildPath = normalizedBuildPath.startsWith(projectPrefix) ? normalizedBuildPath.slice(projectPrefix.length) : normalizedBuildPath;
-  return `game-spark://${encodeURIComponent(projectId)}/${relativeBuildPath
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/")}`;
 }
 
 function formatRelativeDate(value: string) {
