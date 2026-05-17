@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld("gameSpark", {
   listWorkspaceProjects() {
     return ipcRenderer.invoke("workspace:list-projects");
   },
+  getSettings() {
+    return ipcRenderer.invoke("settings:get");
+  },
+  updateSettings(settings) {
+    return ipcRenderer.invoke("settings:update", settings);
+  },
   logInteraction(interaction) {
     return ipcRenderer.invoke("interaction:log", interaction);
   },

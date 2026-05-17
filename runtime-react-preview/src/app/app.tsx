@@ -11,6 +11,7 @@ import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
 import type {
   AgentEvent,
   AgentPhase,
+  AgentEnvVariable,
   CodexRunRequest,
   GameProjectAsset,
   GameProjectManifest,
@@ -30,7 +31,7 @@ const phaseLabels: Record<AgentPhase, string> = {
   error: "Error",
 };
 
-const supportedStyles = ["2D", "HD2D", "3D"];
+const supportedStyles = ["image-blaster", "2D", "3D"];
 const supportedGameTypes = Array.from(new Set(gameCreationTemplates.map((template) => template.type)));
 const randomGameIdeas = [
   {
@@ -132,6 +133,11 @@ export default function App() {
     path: "~/Game Spark AI",
     defaultPath: "~/Game Spark AI",
   });
+  const [agentEnv, setAgentEnv] = useState<AgentEnvVariable[]>([]);
+  const [settingsStatus, setSettingsStatus] = useState<{ kind: "idle" | "saved" | "error"; message: string }>({
+    kind: "idle",
+    message: "",
+  });
   const projectRef = useRef<GameProjectManifest | null>(project);
 
   useEffect(() => {
@@ -140,6 +146,7 @@ export default function App() {
 
   useEffect(() => {
     window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
+    window.gameSpark?.getSettings?.().then((settings) => setAgentEnv(settings.agentEnv)).catch(() => undefined);
     refreshWorkspaceProjects();
   }, []);
 
@@ -348,7 +355,7 @@ export default function App() {
           summary:
             workflowIntent === "game_update"
               ? mode === "create"
-                ? "Generated new HD2D game project scaffold."
+                ? "Generated new image-blaster game project scaffold."
                 : "Applied iteration request to local project."
               : "Answered conversationally without changing project files.",
         },
@@ -449,10 +456,16 @@ export default function App() {
             events={events}
             phase={phase}
             workspace={workspace}
+            agentEnv={agentEnv}
+            settingsStatus={settingsStatus}
             onDraftChange={updateDraft}
             onAddAttachment={addMockAttachment}
             onSelectWorkspace={selectWorkspace}
             onResetWorkspace={resetWorkspace}
+            onAddAgentEnv={addAgentEnv}
+            onUpdateAgentEnv={updateAgentEnv}
+            onRemoveAgentEnv={removeAgentEnv}
+            onSaveAgentEnv={saveAgentEnv}
             onIterate={() => startRun("chat")}
             onRebuildSource={rebuildPreview}
             onInterrupt={interruptCodex}
@@ -481,6 +494,58 @@ export default function App() {
       logInteraction("workspace_reset", { path: nextWorkspace.path });
       setWorkspace(nextWorkspace);
       refreshWorkspaceProjects();
+    }
+  }
+
+  function addAgentEnv() {
+    setAgentEnv((current) => [
+      ...current,
+      {
+        id: `env-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        key: "",
+        value: "",
+      },
+    ]);
+    setSettingsStatus({ kind: "idle", message: "" });
+  }
+
+  function updateAgentEnv(id: string, patch: Partial<AgentEnvVariable>) {
+    setAgentEnv((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setSettingsStatus({ kind: "idle", message: "" });
+  }
+
+  function removeAgentEnv(id: string) {
+    setAgentEnv((current) => current.filter((item) => item.id !== id));
+    setSettingsStatus({ kind: "idle", message: "" });
+  }
+
+  async function saveAgentEnv() {
+    const invalid = agentEnv.find((item) => item.key.trim() && !isValidEnvName(item.key.trim()));
+    if (invalid) {
+      setSettingsStatus({ kind: "error", message: `${invalid.key || "Variable name"} is not a valid environment variable name.` });
+      return;
+    }
+
+    try {
+      const result = await window.gameSpark?.updateSettings?.({
+        agentEnv: agentEnv
+          .filter((item) => item.key.trim())
+          .map((item) => ({ ...item, key: item.key.trim() })),
+      });
+      if (!result?.ok) {
+        throw new Error(result?.error || "Settings were not saved.");
+      }
+      setAgentEnv(result.agentEnv);
+      setSettingsStatus({
+        kind: "saved",
+        message: `${result.agentEnv.length} environment variable${result.agentEnv.length === 1 ? "" : "s"} saved.`,
+      });
+      logInteraction("settings_agent_env_saved", {
+        count: result.agentEnv.length,
+        keys: result.agentEnv.map((item) => item.key),
+      });
+    } catch (error) {
+      setSettingsStatus({ kind: "error", message: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -912,10 +977,16 @@ function Workspace({
   events,
   phase,
   workspace,
+  agentEnv,
+  settingsStatus,
   onDraftChange,
   onAddAttachment,
   onSelectWorkspace,
   onResetWorkspace,
+  onAddAgentEnv,
+  onUpdateAgentEnv,
+  onRemoveAgentEnv,
+  onSaveAgentEnv,
   onIterate,
   onRebuildSource,
   onInterrupt,
@@ -930,10 +1001,16 @@ function Workspace({
   events: AgentEvent[];
   phase: AgentPhase;
   workspace: WorkspaceInfo;
+  agentEnv: AgentEnvVariable[];
+  settingsStatus: { kind: "idle" | "saved" | "error"; message: string };
   onDraftChange: (content: string) => void;
   onAddAttachment: () => void;
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
+  onAddAgentEnv: () => void;
+  onUpdateAgentEnv: (id: string, patch: Partial<AgentEnvVariable>) => void;
+  onRemoveAgentEnv: (id: string) => void;
+  onSaveAgentEnv: () => void;
   onIterate: () => void;
   onRebuildSource: () => void;
   onInterrupt: () => void;
@@ -946,9 +1023,15 @@ function Workspace({
         workspace={workspace}
         assets={project?.assets ?? []}
         selectedAssetId={selectedAssetId}
+        agentEnv={agentEnv}
+        settingsStatus={settingsStatus}
         onSelectAsset={onSelectAsset}
         onSelectWorkspace={onSelectWorkspace}
         onResetWorkspace={onResetWorkspace}
+        onAddAgentEnv={onAddAgentEnv}
+        onUpdateAgentEnv={onUpdateAgentEnv}
+        onRemoveAgentEnv={onRemoveAgentEnv}
+        onSaveAgentEnv={onSaveAgentEnv}
       />
       <AgentChat
         promptBlocks={promptBlocks}
@@ -970,17 +1053,29 @@ function NavigationPanel({
   workspace,
   assets,
   selectedAssetId,
+  agentEnv,
+  settingsStatus,
   onSelectAsset,
   onSelectWorkspace,
   onResetWorkspace,
+  onAddAgentEnv,
+  onUpdateAgentEnv,
+  onRemoveAgentEnv,
+  onSaveAgentEnv,
 }: {
   project: GameProjectManifest | null;
   workspace: WorkspaceInfo;
   assets: GameProjectAsset[];
   selectedAssetId: string;
+  agentEnv: AgentEnvVariable[];
+  settingsStatus: { kind: "idle" | "saved" | "error"; message: string };
   onSelectAsset: (assetId: string) => void;
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
+  onAddAgentEnv: () => void;
+  onUpdateAgentEnv: (id: string, patch: Partial<AgentEnvVariable>) => void;
+  onRemoveAgentEnv: (id: string) => void;
+  onSaveAgentEnv: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"assets" | "settings">("assets");
 
@@ -989,7 +1084,7 @@ function NavigationPanel({
       <div className="nav-brand">
         <div>
           <h1>{project?.title ?? "Untitled"}</h1>
-          <span>{project?.style ?? "HD2D"} project</span>
+          <span>{project?.style ?? "image-blaster"} project</span>
         </div>
       </div>
 
@@ -1029,11 +1124,90 @@ function NavigationPanel({
             <>
               <ProjectSnapshot project={project} workspace={workspace} />
               <WorkspacePicker compact workspace={workspace} onSelectWorkspace={onSelectWorkspace} onResetWorkspace={onResetWorkspace} />
+              <AgentEnvSettings
+                agentEnv={agentEnv}
+                status={settingsStatus}
+                onAdd={onAddAgentEnv}
+                onUpdate={onUpdateAgentEnv}
+                onRemove={onRemoveAgentEnv}
+                onSave={onSaveAgentEnv}
+              />
             </>
           ) : null}
         </div>
       </div>
     </aside>
+  );
+}
+
+function AgentEnvSettings({
+  agentEnv,
+  status,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onSave,
+}: {
+  agentEnv: AgentEnvVariable[];
+  status: { kind: "idle" | "saved" | "error"; message: string };
+  onAdd: () => void;
+  onUpdate: (id: string, patch: Partial<AgentEnvVariable>) => void;
+  onRemove: (id: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="agent-env-settings">
+      <div className="section-heading">
+        <h2>Agent environment</h2>
+        <span>{agentEnv.filter((item) => item.key.trim()).length}</span>
+      </div>
+      <p>Saved variables are injected into the Codex process when the agent runs.</p>
+      <div className="env-list">
+        {agentEnv.length ? (
+          agentEnv.map((item) => {
+            const keyIsInvalid = Boolean(item.key.trim()) && !isValidEnvName(item.key.trim());
+            return (
+              <div className="env-row" key={item.id}>
+                <label>
+                  <span>Name</span>
+                  <input
+                    value={item.key}
+                    onChange={(event) => onUpdate(item.id, { key: event.target.value })}
+                    placeholder="WORLD_LABS_API_KEY"
+                    aria-invalid={keyIsInvalid}
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span>Value</span>
+                  <input
+                    type="password"
+                    value={item.value}
+                    onChange={(event) => onUpdate(item.id, { value: event.target.value })}
+                    placeholder="Stored locally"
+                    spellCheck={false}
+                  />
+                </label>
+                <button className="ghost-button" type="button" onClick={() => onRemove(item.id)}>
+                  Remove
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div className="env-empty">No agent environment variables saved.</div>
+        )}
+      </div>
+      <div className="env-actions">
+        <button className="secondary-button" type="button" onClick={onAdd}>
+          Add variable
+        </button>
+        <button type="button" onClick={onSave}>
+          Save
+        </button>
+      </div>
+      {status.message ? <small className={`settings-status ${status.kind}`}>{status.message}</small> : null}
+    </section>
   );
 }
 
@@ -1587,7 +1761,7 @@ function normalizeManifest(manifest: GameProjectManifest): GameProjectManifest {
   return {
     id,
     title,
-    style: "HD2D",
+    style: "image-blaster",
     createdAt: typeof manifest.createdAt === "string" ? manifest.createdAt : now,
     updatedAt: typeof manifest.updatedAt === "string" ? manifest.updatedAt : now,
     workspacePath: typeof manifest.workspacePath === "string" ? manifest.workspacePath : id,
@@ -1753,7 +1927,7 @@ function classifyWorkflowIntent(prompt: string, mode: CodexRunRequest["mode"]): 
     "map",
     "mechanic",
     "script",
-    "playcanvas",
+    "image-blaster",
     "camera",
     "lighting",
     "control",
@@ -1768,9 +1942,13 @@ function isCodexBusy(phase: AgentPhase) {
   return phase === "planning" || phase === "generating_assets" || phase === "generating_world" || phase === "writing_code" || phase === "building";
 }
 
+function isValidEnvName(value: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
 function titleFromPrompt(prompt: string) {
   const firstWords = prompt.split(/\s+/).slice(0, 4).join(" ");
-  return firstWords || "New HD2D Game";
+  return firstWords || "New image-blaster game";
 }
 
 function wait(ms: number) {

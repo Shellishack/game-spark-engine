@@ -1112,6 +1112,105 @@ pre {
   font-size: 0.78rem;
 }
 
+.agent-env-settings {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 3px dashed var(--line);
+  padding-top: 0.85rem;
+}
+
+.agent-env-settings p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.env-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.env-row {
+  display: grid;
+  gap: 0.55rem;
+  border: 3px solid var(--line);
+  border-radius: 12px 10px 14px 11px;
+  padding: 0.65rem;
+  background: var(--paper);
+  box-shadow: 2px 3px 0 var(--line);
+}
+
+.env-row label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.env-row span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.env-row input {
+  width: 100%;
+  min-width: 0;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.55rem;
+  background: var(--surface);
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.env-row input[aria-invalid="true"] {
+  border-color: var(--danger);
+  background: #fff0f0;
+}
+
+.env-row button {
+  justify-self: start;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.72rem;
+}
+
+.env-empty {
+  border: 2px dashed #b9c5ca;
+  border-radius: 12px;
+  padding: 0.8rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.env-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.env-actions button {
+  padding: 0.55rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+.settings-status {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.settings-status.saved {
+  color: #255b36;
+}
+
+.settings-status.error {
+  color: var(--danger);
+}
+
 .workspace-picker small {
   color: #6f7a81;
   font-weight: 800;

@@ -45,6 +45,77 @@ async function writeSettings(settings) {
   await fs.writeFile(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
 }
 
+function normalizeAgentEnv(value) {
+  if (!Array.isArray(value)) return [];
+  const normalized = [];
+  const seen = new Map();
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const key = typeof item.key === "string" ? item.key.trim() : "";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    const entry = {
+      id: typeof item.id === "string" && item.id.trim() ? item.id : `env-${key.toLowerCase()}`,
+      key,
+      value: typeof item.value === "string" ? item.value : String(item.value ?? ""),
+    };
+    const mapKey = key.toUpperCase();
+    if (seen.has(mapKey)) {
+      normalized[seen.get(mapKey)] = entry;
+    } else {
+      seen.set(mapKey, normalized.length);
+      normalized.push(entry);
+    }
+  }
+
+  return normalized;
+}
+
+function agentEnvRecord(agentEnv) {
+  return Object.fromEntries(normalizeAgentEnv(agentEnv).map((item) => [item.key, item.value]));
+}
+
+function codexRuntimeEnv(settings) {
+  const env = { ...process.env, ...agentEnvRecord(settings.agentEnv) };
+
+  if (!env.FAL_API_KEY && env.FAL_KEY) {
+    env.FAL_API_KEY = env.FAL_KEY;
+  }
+  if (!env.FAL_KEY && env.FAL_API_KEY) {
+    env.FAL_KEY = env.FAL_API_KEY;
+  }
+
+  return env;
+}
+
+function injectedAgentEnvNames(settings) {
+  const env = codexRuntimeEnv(settings);
+  const names = new Set(normalizeAgentEnv(settings.agentEnv).map((item) => item.key));
+  if (names.has("FAL_KEY") && env.FAL_API_KEY) names.add("FAL_API_KEY");
+  if (names.has("FAL_API_KEY") && env.FAL_KEY) names.add("FAL_KEY");
+  return Array.from(names).sort();
+}
+
+async function getAppSettings() {
+  const settings = await readSettings();
+  return {
+    agentEnv: normalizeAgentEnv(settings.agentEnv),
+  };
+}
+
+async function updateAppSettings(_event, nextSettings = {}) {
+  const settings = await readSettings();
+  const agentEnv = normalizeAgentEnv(nextSettings.agentEnv);
+  await writeSettings({
+    ...settings,
+    agentEnv,
+  });
+  return {
+    ok: true,
+    agentEnv,
+  };
+}
+
 function sanitizeFilePart(value, fallback) {
   const safe = String(value || fallback)
     .trim()
@@ -318,7 +389,6 @@ function defaultBuildHtml(title) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title)}</title>
-    <script src="https://code.playcanvas.com/playcanvas-stable.min.js"></script>
   </head>
   <body>
     <canvas id="application"></canvas>
@@ -348,7 +418,7 @@ async function touchManifestAfterRebuild(projectRoot) {
   const now = new Date().toISOString();
   manifest.id = typeof manifest.id === "string" ? manifest.id : path.basename(projectRoot);
   manifest.title = typeof manifest.title === "string" ? manifest.title : titleFromProjectId(manifest.id);
-  manifest.style = typeof manifest.style === "string" ? manifest.style : "HD2D";
+  manifest.style = typeof manifest.style === "string" ? manifest.style : "image-blaster";
   manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
   manifest.updatedAt = now;
   manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : manifest.id;
@@ -565,7 +635,7 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
     manifest = {
       id: projectId,
       title: projectTitle,
-      style: "HD2D",
+      style: "image-blaster",
       createdAt: now,
       updatedAt: now,
       workspacePath: projectId,
@@ -579,7 +649,7 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
   } else {
     manifest.id = typeof manifest.id === "string" ? manifest.id : projectId;
     manifest.title = typeof manifest.title === "string" ? manifest.title : projectTitle;
-    manifest.style = typeof manifest.style === "string" ? manifest.style : "HD2D";
+    manifest.style = typeof manifest.style === "string" ? manifest.style : "image-blaster";
     manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
     manifest.updatedAt = now;
     manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : projectId;
@@ -650,20 +720,22 @@ async function createCodexPrompt(request) {
     "Do not modify files or run game-generation workflows unless WORKFLOW_ALLOWED is true.",
     "If WORKFLOW_ALLOWED is false, answer the user conversationally only. Do not write files. Do not create assets. Do not run shell commands. Do not build the game.",
     "If WORKFLOW_ALLOWED is true, you may use the game generation/update workflow as a tool to satisfy the user's request.",
-    "The game workflow creates or updates a local PlayCanvas HD2D web game project in this workspace.",
+    "The game workflow creates or updates a local image-blaster-based web game project in this workspace. Do not target PlayCanvas for new games.",
     "Do not start Python, python -m http.server, or any ad hoc preview server. Electron owns preview serving with its Node HTTP bridge.",
-    "When using the workflow, use Codex Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
+    "When using the workflow, use OpenAI Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
+    "Before running image-blaster, use OpenAI Image 2 to generate a clean background/environment reference image from the user's prompt, save it under assets/scenes or assets/textures, and pass that image to image-blaster as its required reference input. The reference image must not include the final character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text.",
     "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
     "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",
-    "Generated sprite sheets must be loaded as textures, applied to camera-facing billboard characters, and animated from the 4x3 sheet layout. Primitive capsules/boxes may only be invisible collision proxies when sprite sheets exist.",
-    "Generated 3D model or scene assets from image-blaster must be saved under assets/models or assets/scenes and loaded/instantiated in the runtime. If image-blaster is unavailable, record the gap and do not claim generated 3D assets exist.",
+    "Use the runtime, viewer, framework, and file structure produced or recommended by image-blaster, then overlay the 2D character and bottom dialogue UI on top of that scene.",
+    "Generated sprite sheets must be loaded by the overlay/runtime layer and animated from the 4x3 sheet layout.",
+    "Generated 3D model or scene assets from image-blaster must be saved under assets/models or assets/scenes and loaded/instantiated through the image-blaster-compatible runtime. If image-blaster is unavailable, record the gap and do not claim generated 3D assets exist.",
     "Validation must fail or record not-ready status when generated assets are manifest-only or not visible in the game.",
     "",
     `WORKFLOW_ALLOWED: ${shouldRunWorkflow ? "true" : "false"}`,
     `Mode: ${request.mode}`,
     `User prompt:\n${request.prompt}`,
     "",
-    "Sprite sheet rule when workflow is used: one 1024x1024 PNG per character emotion; emotions are idle, walk, laugh, confused, sad, angry, surprised; filename [character]_[emotion].png; 4 columns x 3 rows, 12 frames.",
+    "Sprite sheet rule when workflow is used: one 1024x1024 PNG for each required emotion; emotions are idle, surprised, happy, sad, laugh; filename [character]_[emotion].png; 4 columns x 3 rows, 12 frames. Treat user spelling such as idel as idle.",
   ].join("\n");
 }
 
@@ -686,10 +758,25 @@ async function startCodexRun(event, request) {
   if (model) {
     args.splice(args.length - 1, 0, "--model", model);
   }
+  const settings = await readSettings();
+  const codexEnv = codexRuntimeEnv(settings);
+  const envNames = injectedAgentEnvNames(settings);
+  await fs.writeFile(
+    path.join(runDir, "agent-env.md"),
+    [
+      "# Agent Environment",
+      "",
+      "These environment variable names were injected into the Codex runtime. Secret values are intentionally omitted.",
+      "",
+      ...(envNames.length ? envNames.map((name) => `- ${name}`) : ["- No saved agent environment variables configured."]),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
 
   const child = spawn(process.env.GAME_SPARK_CODEX_BIN || "codex", args, {
     cwd: projectDir,
-    env: { ...process.env },
+    env: codexEnv,
     windowsHide: true,
     shell: process.platform === "win32",
   });
@@ -920,6 +1007,8 @@ ipcMain.handle("workspace:get", getWorkspaceInfo);
 ipcMain.handle("workspace:select", selectWorkspaceFolder);
 ipcMain.handle("workspace:reset", resetWorkspaceFolder);
 ipcMain.handle("workspace:list-projects", listWorkspaceProjects);
+ipcMain.handle("settings:get", getAppSettings);
+ipcMain.handle("settings:update", updateAppSettings);
 ipcMain.handle("interaction:log", logInteraction);
 ipcMain.handle("preview:start-server", startPreviewServer);
 ipcMain.handle("preview:rebuild", rebuildProjectPreview);

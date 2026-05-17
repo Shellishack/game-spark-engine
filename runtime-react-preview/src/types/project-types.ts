@@ -11,7 +11,7 @@ export type AgentPhase =
 export type AssetKind = "sprite" | "model" | "texture" | "script" | "scene";
 export type AssetSource = "generated" | "imported" | "system";
 
-export type Hd2dStyle = "HD2D";
+export type Hd2dStyle = "HD2D" | "image-blaster";
 
 export type GameProjectAsset = {
   id: string;
@@ -73,6 +73,16 @@ export type WorkspaceInfo = {
   defaultPath: string;
 };
 
+export type AgentEnvVariable = {
+  id: string;
+  key: string;
+  value: string;
+};
+
+export type AppSettings = {
+  agentEnv: AgentEnvVariable[];
+};
+
 export type WorkspaceProjectSummary = {
   id: string;
   title: string;
@@ -106,6 +116,8 @@ export type GameSparkBridge = {
   selectWorkspace?: () => Promise<WorkspaceInfo>;
   resetWorkspace?: () => Promise<WorkspaceInfo>;
   listWorkspaceProjects?: () => Promise<WorkspaceProjectSummary[]>;
+  getSettings?: () => Promise<AppSettings>;
+  updateSettings?: (settings: AppSettings) => Promise<{ ok: boolean; agentEnv: AgentEnvVariable[]; error?: string }>;
   logInteraction?: (interaction: { type: string; payload?: Record<string, unknown> }) => Promise<{ ok: boolean; path?: string }>;
   openPreviewWindow?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   openPreviewInBrowser?: (url: string) => Promise<{ ok: boolean; error?: string }>;

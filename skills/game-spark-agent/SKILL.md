@@ -1,15 +1,25 @@
 ---
 name: game-spark-agent
-description: Use when creating, updating, reviewing, or operating Game Spark AI projects without relying on the Electron UI. This skill defines the core agentic loop for an AI-native local-first game engine using PlayCanvas, local files, generated 2D sprite sheets, generated 3D assets, JavaScript game scripts, manifests, and playable builds.
+description: Use when creating, updating, reviewing, or operating Game Spark AI projects without relying on the Electron UI. This skill defines the core agentic loop for an AI-native local-first game engine using image-blaster's generated scene/runtime stack, local files, generated 2D sprite sheets, generated 3D scene assets, JavaScript overlay code, manifests, and playable builds.
 ---
 
 # Game Spark Agent
 
 This skill is the core Game Spark AI workflow. The Electron app is only a UI shell around this same loop.
 
+## Intent Gate
+
+Treat game generation as a tool, not the default response.
+
+- Conversation: answer without changing files.
+- Game update: create or modify project files only when the user clearly asks to create, generate, rebuild, update, modify, fix, or publish game content.
+- Review/debug: inspect the project, identify issues, and patch only what is needed.
+
+When game generation is allowed, build a local image-blaster-based interactive story scene. Do not target PlayCanvas for new games.
+
 ## Project Contract
 
-Work inside one local project folder. The folder itself is the project root under the user's workspace.
+Work inside one local project folder under the user's selected workspace.
 
 Expected structure:
 
@@ -38,56 +48,79 @@ Expected structure:
 
 Always maintain `manifest.json`. It is the UI contract.
 
-## Agentic Loop
+## New Game Generation Workflow
 
-1. **Classify intent**
-   - Conversation: answer without changing files.
-   - Game update: create or modify project files.
-   - Review/debug: inspect project, identify issues, and patch only what is needed.
+When the user starts a request to generate a new game, run this sequence:
 
-2. **Read project state**
-   - Inspect `manifest.json`, `src/`, `assets/`, and latest `runs/`.
-   - Preserve user files and existing project decisions unless the request asks to replace them.
+1. **Generate the image-blaster reference image**
+   - Before running image-blaster, use OpenAI Image 2 to generate a single background reference image from the user's game request.
+   - The image must be an environment/background reference for image-blaster, not a full gameplay mockup.
+   - The image should show the intended world, mood, landmark composition, camera angle, lighting, and visual style for the 3D scene.
+   - Do not include the final 2D character sprite, dialogue box, decision buttons, HUD, captions, logos, or UI text in this background reference.
+   - Keep the background reference clean enough for image-blaster to infer scene geometry and atmosphere.
+   - Save the reference under `assets/textures/` or `assets/scenes/`, for example `assets/scenes/world_reference.png`.
+   - Record the reference image in `manifest.json` with prompt provenance.
+   - This reference image is the required image input for image-blaster. Do not run image-blaster without either this generated reference or a user-supplied reference image.
 
-3. **Plan**
-   - Write a concise plan to `runs/<timestamp>/plan.md`.
-   - Include gameplay loop, level/world changes, assets, scripts, and validation steps.
+2. **Prepare image-blaster**
+   - If `skills/image-blaster/` is missing, clone `https://github.com/neilsonnn/image-blaster` into `skills/image-blaster/` before generating world assets.
+   - Follow the cloned repository's setup and run instructions.
+   - Use World Labs API and fal API exactly as required by image-blaster. Required credentials must come from the environment, such as `WORLD_LABS_API_KEY` and `FAL_KEY` or the variable names documented by image-blaster.
+   - If a required key or dependency is unavailable, record the blocker in `runs/<timestamp>/validation.md` and do not claim image-blaster assets were generated.
 
-4. **Design**
-   - Prefer HD2D for MVP: 3D environment, 2D sprite billboard characters, cinematic lighting, depth-of-field feel.
-   - Make gameplay first: goals, verbs, feedback, challenge, progression, and iteration hooks.
+3. **Generate the scene with image-blaster**
+   - Do not use Claude Code to generate images even if image-blaster recommends it. Use Codex for any code generation related to image-blaster's asset generation, runtime, or viewer.
+   - Use image-blaster to create the primary 3D world or scene backdrop from the reference image.
+   - Save resulting scene/model assets under `assets/scenes/` or `assets/models/`.
+   - Use the runtime, viewer, framework, and file structure produced or recommended by image-blaster.
+   - Do not convert the scene into PlayCanvas unless image-blaster itself explicitly requires it.
+   - Load and instantiate the generated assets in the image-blaster-compatible runtime. Manifest-only generated assets are incomplete.
 
-5. **Generate assets**
-   - Follow `references/asset-generation.md`.
-   - Follow `references/game-quality-bar.md` for genre-specific acceptance criteria.
-   - Use Image 2 for 2D character sprite sheets.
-   - Use the vendored `skills/image-blaster/` workflow for 3D world, model, and scene assets.
-   - Asset generation is not complete until generated assets are visibly used by the runtime. Do not satisfy this step by writing files and manifest entries only.
-   - Do not mark a game ready when requested generated assets are replaced by fallback drawings or procedural primitives. Record the run as not-ready or ready-with-blockers and name the blocked generator.
+4. **Generate character emotion sprite sheets**
+   - Use OpenAI Image 2 to generate one character with five 2D emotion sprite sheets.
+   - The required emotions are `idle`, `surprised`, `happy`, `sad`, and `laugh`.
+   - Treat user spelling such as `idel` as `idle`.
+   - Generate one 1024x1024 PNG per emotion, each as a 4 columns x 3 rows sprite sheet with 12 frames.
+   - Name files `[character]_[emotion].png` and save them under `assets/sprites/`.
+   - Keep the character visually consistent across all five sheets.
+   - Load each sprite sheet as a texture and animate it from the 4x3 frame layout.
 
-6. **Write game code**
-   - Use PlayCanvas scripts in JavaScript.
-   - Use snippets from `scripts/` when creating generated game objects.
-   - Keep systems modular: player, camera, interactions, NPCs, objectives, inventory/progression, world events.
-   - Keep generated runtime code readable and editable.
-   - Bind every generated character sprite sheet that is part of the current playable scene to a textured billboard material and animate frames from the 4x3 sheet.
-   - Use primitive capsules/boxes for invisible collision, triggers, or early blockout only. If a sprite sheet exists for a visible character, the final visible character must not be a primitive capsule.
-   - Load and instantiate generated 3D model or scene assets for the environment and props when image-blaster output exists. Procedural primitives may supplement generated assets, but they must not be the only visible environment if generated 3D assets were requested or claimed.
-   - If image-blaster is unavailable, record that as a known gap and do not claim generated 3D model assets exist.
+5. **Overlay the sprite actor over the generated scene**
+   - Render the character as a 2D overlay layer on top of the image-blaster scene.
+   - Use the current dialogue state to switch the visible emotion sheet.
+   - The character may be a screen-space HTML/CSS/canvas overlay, a transparent textured plane in the image-blaster runtime, or another overlay method that fits image-blaster's stack.
+   - Do not add PlayCanvas-specific billboards, entities, scripts, or primitive proxies unless image-blaster's own runtime uses PlayCanvas.
 
-7. **Build and validate**
-   - Produce or update a playable local build under `build/`.
-   - Do not start Python, `python -m http.server`, or any ad hoc preview server. The Electron app owns preview serving through its local Node/Electron bridge.
-   - A build means files are written to disk and assets are copied or referenced correctly; serving is outside the agent workflow.
-   - Validate that entry files exist, assets referenced in code exist, `manifest.json` matches disk, and generated assets are referenced by runtime code.
-   - Treat manifest-only assets as incomplete unless they are explicitly marked as planned placeholders.
-   - The run is not ready if generated sprite sheets are not used for visible characters or generated 3D assets are not loaded for claimed generated environments.
-   - Run `node <skill-root>/scripts/validate-generated-game.mjs <project-root>` when available, and copy the JSON summary into `runs/<timestamp>/validation.md`.
-   - If the user prompt asks for a novel adventure, roleplay, story branches, or drag/drop interactions, validate those mechanics against `references/game-quality-bar.md`; do not treat keyboard pickup/drop as satisfying mouse or pointer drag/drop.
+6. **Add bottom dialogue UI**
+   - Add a dialogue interface anchored to the bottom of the game viewport.
+   - Include speaker name, dialogue line, and two to three decision buttons.
+   - The interface must be playable with pointer/click input and keyboard selection where practical.
+   - Do not cover the main character's face or primary scene objective with the dialogue panel.
+
+7. **Create a five-round interactive story**
+   - Make up a compact branching decision tree for about five rounds.
+   - Each round should present a clear story choice, update game state, change the character's emotion, and lead to the next node.
+   - Include at least one branch that recontextualizes the scene and one branch that changes the ending.
+   - Store the decision tree as readable game data in `src/main.js` or a small module under `src/`.
+   - The playable result should feel like a short interactive storytelling game, not a static visualizer.
+
+8. **Build and validate**
+   - Produce or update `build/index.html`.
+   - Do not start Python, `python -m http.server`, or any ad hoc preview server. Electron owns preview serving through its local Node/Electron bridge.
+   - Validate that the Image 2 reference image exists and is the input used by image-blaster, unless the user supplied a reference image.
+   - Validate that generated 3D assets exist and are referenced by the image-blaster-compatible runtime code.
+   - Validate that all five emotion sprite sheets exist, are referenced by runtime code, and are visible through dialogue-state changes.
+   - Validate that the bottom dialogue UI exposes a five-round decision tree.
    - Record validation in `runs/<timestamp>/validation.md`.
 
-8. **Report**
-   - Summarize changed files, playable build path, known gaps, and suggested next iteration.
+## General Agentic Loop
+
+1. Read `manifest.json`, `src/`, `assets/`, and latest `runs/`.
+2. Preserve user files and existing project decisions unless the request asks to replace them.
+3. Write a concise plan to `runs/<timestamp>/plan.md`.
+4. Implement gameplay, scene assets, sprite assets, scripts, manifest updates, build output, and run metadata.
+5. Validate the playable result and record known gaps.
+6. Report changed files, playable build path, blockers, and the next useful iteration.
 
 ## Manifest Requirements
 
@@ -97,11 +130,11 @@ Always maintain `manifest.json`. It is the UI contract.
 {
   "id": "project-slug",
   "title": "Project Title",
-  "style": "HD2D",
+  "style": "image-blaster",
   "createdAt": "ISO timestamp",
   "updatedAt": "ISO timestamp",
   "workspacePath": "project-slug",
-  "playCanvasEntry": "src/main.js",
+  "runtimeEntry": "src/main.js",
   "buildPath": "project-slug/build/index.html",
   "promptHistory": [],
   "runHistory": [],
@@ -109,14 +142,4 @@ Always maintain `manifest.json`. It is the UI contract.
 }
 ```
 
-Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`. Use `kind: "sprite"` for sprite sheets.
-
-## References
-
-For asset generation, read `references/asset-generation.md`.
-For detailed design rules, read `references/design-rules.md`.
-For roleplay, storytelling, and interaction acceptance criteria, read `references/game-quality-bar.md`.
-For a concrete failure analysis to avoid repeating, read `references/lantern-grove5-postmortem.md`.
-For project file conventions and validation details, read `references/project-contract.md`.
-For reusable PlayCanvas object snippets, read `scripts/README.md` and the snippet files in `scripts/`.
-For 3D world/object generation, read `../image-blaster/SKILL.md`.
+Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`. Use `kind: "sprite"` for sprite sheets, `kind: "scene"` for generated scene outputs, and `kind: "model"` for generated model outputs. Existing app manifests may still include the legacy `playCanvasEntry` field for compatibility; do not interpret that as permission to use PlayCanvas for new generation.
