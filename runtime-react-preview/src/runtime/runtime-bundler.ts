@@ -1,7 +1,7 @@
 import * as esbuild from "esbuild-wasm";
 import wasmUrl from "esbuild-wasm/esbuild.wasm?url";
-import { phaser2dSource } from "./phaser2dSource";
-import type { PreviewBundle, RuntimeAsset, RuntimeProject } from "./projectTypes";
+import { phaser2dSource } from "./phaser-2d-source";
+import type { PreviewBundle, RuntimeAsset, RuntimeProject } from "../types/project-types";
 
 let initialized: Promise<void> | undefined;
 

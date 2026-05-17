@@ -1,4 +1,4 @@
-import type { GameCategory, GenerationMode, RuntimeProject } from "./projectTypes";
+import type { GameCategory, GenerationMode, RuntimeProject } from "../types/project-types";
 
 const projectSchema = {
   type: "object",

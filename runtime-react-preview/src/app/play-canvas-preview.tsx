@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as pc from "playcanvas";
-import type { AgentPhase, GameProjectAsset, GameProjectManifest } from "./projectTypes";
+import type { AgentPhase, GameProjectAsset, GameProjectManifest } from "../types/project-types";
 
 export function GamePreview({
   project,

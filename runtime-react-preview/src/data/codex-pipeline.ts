@@ -1,4 +1,4 @@
-import type { AgentEvent, CodexRunRequest, GameProjectAsset, GameProjectManifest, PromptBlock, PublishedGame } from "./projectTypes";
+import type { AgentEvent, CodexRunRequest, GameProjectAsset, GameProjectManifest, PromptBlock, PublishedGame } from "../types/project-types";
 
 export const spriteEmotions = ["idle", "walk", "laugh", "confused", "sad", "angry", "surprised"] as const;
 

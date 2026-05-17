@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const isDev = !app.isPackaged;
+const appRoot = path.resolve(__dirname, "..");
 let activeCodexChild = null;
 
 app.disableHardwareAcceleration();
@@ -319,7 +320,7 @@ async function createWindow() {
   if (isDev) {
     await win.loadURL("http://127.0.0.1:5050");
   } else {
-    await win.loadFile(path.join(__dirname, "dist", "index.html"));
+    await win.loadFile(path.join(appRoot, "dist", "index.html"));
   }
 }
 

@@ -6,9 +6,9 @@ import {
   publishedGames,
   spriteEmotions,
   starterProject,
-} from "./codexPipeline";
-import { GamePreview } from "./PlayCanvasPreview";
-import shuffleIdeaAtlasUrl from "./assets/shuffle-idea-atlas.png";
+} from "../data/codex-pipeline";
+import { GamePreview } from "./play-canvas-preview";
+import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
 import type {
   AgentEvent,
   AgentPhase,
@@ -17,7 +17,7 @@ import type {
   GameProjectManifest,
   PromptBlock,
   WorkspaceInfo,
-} from "./projectTypes";
+} from "../types/project-types";
 
 const phaseLabels: Record<AgentPhase, string> = {
   idle: "Idle",
