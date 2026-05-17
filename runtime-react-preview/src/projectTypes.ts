@@ -62,7 +62,8 @@ export type PublishedGame = {
 export type CodexRunRequest = {
   projectId: string;
   prompt: string;
-  mode: "create" | "iterate";
+  mode: "chat" | "create" | "iterate";
+  workflowIntent: "conversation" | "game_update";
   attachments: PromptBlock[];
 };
 

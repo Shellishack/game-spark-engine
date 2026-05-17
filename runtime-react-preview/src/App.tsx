@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  codexSystemPrompt,
   createManifest,
   createMockRunEvents,
   defaultPromptBlocks,
-  electronBridgeContract,
   publishedGames,
   spriteEmotions,
   starterProject,
@@ -84,19 +82,21 @@ export default function App() {
     [project, selectedAssetId],
   );
 
-  async function startRun(mode: CodexRunRequest["mode"]) {
+  async function startRun(mode: CodexRunRequest["mode"], explicitIntent?: CodexRunRequest["workflowIntent"]) {
     const prompt = promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
     const nextProject = project ?? createManifest(titleFromPrompt(prompt));
+    const workflowIntent = explicitIntent ?? classifyWorkflowIntent(prompt, mode);
     const request: CodexRunRequest = {
       projectId: nextProject.id,
       prompt,
       mode,
+      workflowIntent,
       attachments: promptBlocks,
     };
 
     setView("workspace");
     setProject(nextProject);
-    setPhase("planning");
+    setPhase(workflowIntent === "game_update" ? "planning" : "idle");
     setEvents([]);
 
     try {
@@ -151,7 +151,12 @@ export default function App() {
           id: `run-${nextProject.runHistory.length + 1}`,
           createdAt: new Date().toISOString(),
           status: "ready" as const,
-          summary: mode === "create" ? "Generated new HD2D PlayCanvas project scaffold." : "Applied iteration request to local project.",
+          summary:
+            workflowIntent === "game_update"
+              ? mode === "create"
+                ? "Generated new HD2D PlayCanvas project scaffold."
+                : "Applied iteration request to local project."
+              : "Answered conversationally without changing project files.",
         },
         ...nextProject.runHistory,
       ],
@@ -191,7 +196,7 @@ export default function App() {
           onAddAttachment={addMockAttachment}
           onSelectWorkspace={selectWorkspace}
           onResetWorkspace={resetWorkspace}
-          onStart={() => startRun("create")}
+          onStart={() => startRun("create", "game_update")}
         />
       ) : (
         <Workspace
@@ -206,7 +211,7 @@ export default function App() {
           onAddAttachment={addMockAttachment}
           onSelectWorkspace={selectWorkspace}
           onResetWorkspace={resetWorkspace}
-          onIterate={() => startRun("iterate")}
+          onIterate={() => startRun("chat")}
           onSelectAsset={setSelectedAssetId}
           onBackHome={() => setView("home")}
         />
@@ -323,48 +328,128 @@ function Workspace({
 }) {
   return (
     <section className="workspace-view">
-      <aside className="prompt-rail">
-        <button className="ghost-button" type="button" onClick={onBackHome}>
-          Home
+      <NavigationPanel
+        project={project}
+        workspace={workspace}
+        assets={project?.assets ?? []}
+        selectedAssetId={selectedAssetId}
+        onSelectAsset={onSelectAsset}
+        onSelectWorkspace={onSelectWorkspace}
+        onResetWorkspace={onResetWorkspace}
+        onBackHome={onBackHome}
+      />
+      <AgentChat
+        promptBlocks={promptBlocks}
+        events={events}
+        phase={phase}
+        project={project}
+        onDraftChange={onDraftChange}
+        onAddAttachment={onAddAttachment}
+        onIterate={onIterate}
+      />
+      <PlayCanvasViewport project={project} phase={phase} selectedAsset={selectedAsset} />
+    </section>
+  );
+}
+
+function NavigationPanel({
+  project,
+  workspace,
+  assets,
+  selectedAssetId,
+  onSelectAsset,
+  onSelectWorkspace,
+  onResetWorkspace,
+  onBackHome,
+}: {
+  project: GameProjectManifest | null;
+  workspace: WorkspaceInfo;
+  assets: GameProjectAsset[];
+  selectedAssetId: string;
+  onSelectAsset: (assetId: string) => void;
+  onSelectWorkspace: () => void;
+  onResetWorkspace: () => void;
+  onBackHome: () => void;
+}) {
+  return (
+    <aside className="nav-panel">
+      <div className="nav-brand">
+        <button className="home-link" type="button" onClick={onBackHome}>
+          Game Spark AI
         </button>
-        <PromptComposer
-          compact
-          promptBlocks={promptBlocks}
-          actionLabel="Send iteration"
-          onDraftChange={onDraftChange}
-          onAddAttachment={onAddAttachment}
-          onSubmit={onIterate}
-        />
-        <WorkspacePicker compact workspace={workspace} onSelectWorkspace={onSelectWorkspace} onResetWorkspace={onResetWorkspace} />
-        <ProjectSnapshot project={project} workspace={workspace} />
-      </aside>
-
-      <section className="agent-workspace">
-        <div className="workspace-header">
-          <div>
-            <p className="eyebrow">Agent workspace</p>
-            <h1>{project?.title ?? "Untitled HD2D project"}</h1>
-          </div>
-          <span className={`phase-chip phase-${phase}`}>{phaseLabels[phase]}</span>
+        <div>
+          <h1>{project?.title ?? "Untitled"}</h1>
+          <span>{project?.style ?? "HD2D"} project</span>
         </div>
+      </div>
 
-        <div className="main-grid">
-          <AgentProgress events={events} phase={phase} />
-          <PlayCanvasViewport project={project} phase={phase} selectedAsset={selectedAsset} />
-          <AssetsViewer assets={project?.assets ?? []} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} />
+      <nav className="nav-section" aria-label="Project navigation">
+        <button className="nav-item active" type="button">
+          <span className="nav-icon">P</span>
+          Project
+        </button>
+        <button className="nav-item" type="button">
+          <span className="nav-icon">A</span>
+          Assets management
+        </button>
+        <button className="nav-item" type="button">
+          <span className="nav-icon">S</span>
+          Settings
+        </button>
+      </nav>
+
+      <AssetsViewer assets={assets} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} />
+      <ProjectSnapshot project={project} workspace={workspace} />
+      <WorkspacePicker compact workspace={workspace} onSelectWorkspace={onSelectWorkspace} onResetWorkspace={onResetWorkspace} />
+    </aside>
+  );
+}
+
+function AgentChat({
+  promptBlocks,
+  events,
+  phase,
+  project,
+  onDraftChange,
+  onAddAttachment,
+  onIterate,
+}: {
+  promptBlocks: PromptBlock[];
+  events: AgentEvent[];
+  phase: AgentPhase;
+  project: GameProjectManifest | null;
+  onDraftChange: (content: string) => void;
+  onAddAttachment: () => void;
+  onIterate: () => void;
+}) {
+  const messagesRef = useRef<HTMLOListElement>(null);
+
+  useEffect(() => {
+    const node = messagesRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+  }, [events.length, phase]);
+
+  return (
+    <section className="chat-panel">
+      <header className="chat-header">
+        <div>
+          <p className="eyebrow">Agent chat</p>
+          <h2>{project?.title ?? "Game project"}</h2>
         </div>
+        <span className={`phase-chip phase-${phase}`}>{phaseLabels[phase]}</span>
+      </header>
 
-        <section className="spec-strip">
-          <div>
-            <h2>Codex prompt contract</h2>
-            <pre>{codexSystemPrompt}</pre>
-          </div>
-          <div>
-            <h2>Electron bridge</h2>
-            <pre>{electronBridgeContract}</pre>
-          </div>
-        </section>
-      </section>
+      <AgentProgress events={events} phase={phase} messagesRef={messagesRef} />
+
+      <PromptComposer
+        compact
+        promptBlocks={promptBlocks}
+        actionLabel="Send"
+        onDraftChange={onDraftChange}
+        onAddAttachment={onAddAttachment}
+        onSubmit={onIterate}
+      />
     </section>
   );
 }
@@ -390,10 +475,10 @@ function WorkspacePicker({
       </div>
       <div className="workspace-actions">
         <button className="secondary-button" type="button" onClick={onSelectWorkspace}>
-          Choose folder
+          Choose
         </button>
         <button className="ghost-button" type="button" onClick={onResetWorkspace}>
-          Use default
+          Default
         </button>
       </div>
     </section>
@@ -414,7 +499,7 @@ function PromptComposer({
       <textarea
         value={draft?.content ?? ""}
         onChange={(event) => onDraftChange(event.target.value)}
-        placeholder="Describe the game, attach references, then send it to Codex."
+        placeholder={compact ? "Ask a question, or ask the agent to update the game." : "Describe the game you want to generate."}
       />
       <div className="attachment-list">
         {promptBlocks
@@ -438,7 +523,15 @@ function PromptComposer({
   );
 }
 
-function AgentProgress({ events, phase }: { events: AgentEvent[]; phase: AgentPhase }) {
+function AgentProgress({
+  events,
+  phase,
+  messagesRef,
+}: {
+  events: AgentEvent[];
+  phase: AgentPhase;
+  messagesRef?: React.RefObject<HTMLOListElement | null>;
+}) {
   const visibleEvents =
     events.length > 0
       ? events
@@ -458,7 +551,7 @@ function AgentProgress({ events, phase }: { events: AgentEvent[]; phase: AgentPh
         <h2>Progress</h2>
         <span>{phaseLabels[phase]}</span>
       </div>
-      <ol className="event-list">
+      <ol className="event-list" ref={messagesRef}>
         {visibleEvents.map((event) => (
           <li key={event.id} className={event.phase === phase ? "active" : ""}>
             <span className="event-dot" />
@@ -524,7 +617,7 @@ function AssetsViewer({
         <span>{assets.length} indexed</span>
       </div>
       <div className="asset-list">
-        {assets.map((asset) => (
+        {assets.slice(0, 8).map((asset) => (
           <button
             className={`asset-row ${asset.id === selectedAssetId ? "selected" : ""}`}
             key={asset.id}
@@ -579,6 +672,56 @@ function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest 
 function blockToPromptText(block: PromptBlock) {
   if (block.type === "text") return block.content.trim();
   return `Attached file: ${block.name} (${block.sizeLabel})`;
+}
+
+function classifyWorkflowIntent(prompt: string, mode: CodexRunRequest["mode"]): CodexRunRequest["workflowIntent"] {
+  if (mode === "create") return "game_update";
+
+  const text = prompt.toLowerCase();
+  const updateVerbs = [
+    "create",
+    "build",
+    "generate",
+    "make",
+    "add",
+    "update",
+    "change",
+    "modify",
+    "remove",
+    "delete",
+    "fix",
+    "implement",
+    "regenerate",
+    "publish",
+    "export",
+    "replace",
+    "tune",
+    "balance",
+    "increase",
+    "decrease",
+  ];
+  const gameTargets = [
+    "game",
+    "level",
+    "scene",
+    "asset",
+    "sprite",
+    "character",
+    "npc",
+    "model",
+    "world",
+    "map",
+    "mechanic",
+    "script",
+    "playcanvas",
+    "camera",
+    "lighting",
+    "control",
+  ];
+
+  const hasUpdateVerb = updateVerbs.some((verb) => text.includes(verb));
+  const hasGameTarget = gameTargets.some((target) => text.includes(target));
+  return hasUpdateVerb && hasGameTarget ? "game_update" : "conversation";
 }
 
 function titleFromPrompt(prompt: string) {

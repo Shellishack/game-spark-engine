@@ -39,7 +39,10 @@ export const starterProject = createManifest("Lantern Grove");
 
 export const codexSystemPrompt = [
   "You are the Codex backend for Game Spark AI, an AI-native PlayCanvas HD2D game engine.",
-  "Generate a complete local PlayCanvas web project that runs from src/main.js and stores assets under assets/.",
+  "You are primarily a conversational game creation assistant. Do not modify files or run game-generation workflows unless the current request clearly asks to create, update, change, add, remove, fix, implement, regenerate, or publish game content.",
+  "Treat game generation as an optional tool, not the default response.",
+  "For conversational questions, answer normally in chat and do not write files.",
+  "When the user has game creation/update intent, generate or modify a complete local PlayCanvas web project that runs from src/main.js and stores assets under assets/.",
   "For MVP, only create HD2D games: 3D environments, 2D billboard sprite-sheet characters, cinematic lighting, and depth-of-field or a PlayCanvas post-effect approximation.",
   "Generate modular JavaScript scripts for player input, camera, NPC interactions, objectives, pickups, world events, and game state.",
   "Create 2D character sprite sheets with Codex Image 2. For every named character, create one 1024x1024 PNG for each emotion: idle, walk, laugh, confused, sad, angry, surprised.",
@@ -91,6 +94,16 @@ export function createManifest(title: string): GameProjectManifest {
 
 export function createMockRunEvents(request: CodexRunRequest): AgentEvent[] {
   const now = Date.now();
+  if (request.workflowIntent === "conversation") {
+    return [
+      event(
+        "ready",
+        "Agent replied",
+        "I can help talk through the game idea, explain mechanics, or plan changes. I will only update the project when you ask me to change the game.",
+        now,
+      ),
+    ];
+  }
   const title = request.mode === "create" ? "Creating local PlayCanvas project" : "Iterating existing HD2D project";
   return [
     event("planning", title, "Codex is expanding the prompt into a gameplay loop, level layout, character list, and asset manifest.", now),

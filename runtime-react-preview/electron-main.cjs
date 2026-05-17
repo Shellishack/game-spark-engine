@@ -87,16 +87,22 @@ async function ensureProject(request) {
 }
 
 function createCodexPrompt(request) {
+  const shouldRunWorkflow = request.workflowIntent === "game_update";
   return [
     "You are the Codex backend for Game Spark AI.",
-    "Generate a local PlayCanvas HD2D web game project in this workspace.",
-    "Use Codex Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
-    "Write manifest.json, src/main.js, assets, build output, and runs metadata.",
+    "You are primarily a conversational game creation assistant.",
+    "Do not modify files or run game-generation workflows unless WORKFLOW_ALLOWED is true.",
+    "If WORKFLOW_ALLOWED is false, answer the user conversationally only. Do not write files. Do not create assets. Do not run shell commands. Do not build the game.",
+    "If WORKFLOW_ALLOWED is true, you may use the game generation/update workflow as a tool to satisfy the user's request.",
+    "The game workflow creates or updates a local PlayCanvas HD2D web game project in this workspace.",
+    "When using the workflow, use Codex Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
+    "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
     "",
+    `WORKFLOW_ALLOWED: ${shouldRunWorkflow ? "true" : "false"}`,
     `Mode: ${request.mode}`,
     `User prompt:\n${request.prompt}`,
     "",
-    "Sprite sheet rule: one 1024x1024 PNG per character emotion; emotions are idle, walk, laugh, confused, sad, angry, surprised; filename [character]_[emotion].png; 4 columns x 3 rows, 12 frames.",
+    "Sprite sheet rule when workflow is used: one 1024x1024 PNG per character emotion; emotions are idle, walk, laugh, confused, sad, angry, surprised; filename [character]_[emotion].png; 4 columns x 3 rows, 12 frames.",
   ].join("\n");
 }
 
@@ -106,9 +112,12 @@ async function startCodexRun(event, request) {
   await fs.writeFile(path.join(runDir, "codex-prompt.md"), prompt, "utf8");
 
   emitAgentEvent(event.sender, {
-    phase: "planning",
-    title: "Starting Codex",
-    detail: `Workspace: ${projectDir}`,
+    phase: request.workflowIntent === "game_update" ? "planning" : "idle",
+    title: request.workflowIntent === "game_update" ? "Starting game workflow" : "Starting chat",
+    detail:
+      request.workflowIntent === "game_update"
+        ? `Workspace: ${projectDir}`
+        : "Codex will answer conversationally unless it decides the user explicitly requested a game update.",
   });
 
   const args = ["exec", "--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "-"];
