@@ -1611,6 +1611,47 @@ pre {
   display: block;
 }
 
+.preview-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  background:
+    linear-gradient(90deg, rgba(38, 61, 91, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(38, 61, 91, 0.1) 1px, transparent 1px),
+    var(--primary-soft);
+  background-size: 32px 32px, 32px 32px, auto;
+  color: var(--secondary);
+  text-align: center;
+}
+
+.preview-empty-state strong {
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.preview-empty-state p {
+  max-width: 28ch;
+  margin: 0;
+  color: var(--muted);
+  font-family: "Nunito", "Segoe UI", sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.preview-spinner {
+  width: 38px;
+  aspect-ratio: 1;
+  border: 3px solid var(--line);
+  border-top-color: var(--primary);
+  border-radius: 999px;
+  animation: previewSpin 850ms linear infinite;
+}
+
 .fallback-stage {
   position: absolute;
   inset: 0;
@@ -2025,5 +2066,11 @@ pre {
 
   .viewport-stage {
     min-height: 320px;
+  }
+}
+
+@keyframes previewSpin {
+  to {
+    transform: rotate(360deg);
   }
 }

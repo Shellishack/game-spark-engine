@@ -5,7 +5,6 @@ import {
   defaultPromptBlocks,
   publishedGames,
   spriteEmotions,
-  starterProject,
 } from "../data/codex-pipeline";
 import { GamePreview } from "./play-canvas-preview";
 import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
@@ -188,10 +187,11 @@ const randomGameIdeas = [
 export default function App() {
   const [view, setView] = useState<"home" | "workspace">("home");
   const [promptBlocks, setPromptBlocks] = useState<PromptBlock[]>(defaultPromptBlocks);
-  const [project, setProject] = useState<GameProjectManifest | null>(starterProject);
+  const [project, setProject] = useState<GameProjectManifest | null>(null);
+  const [lastPreviewProject, setLastPreviewProject] = useState<GameProjectManifest | null>(null);
   const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [phase, setPhase] = useState<AgentPhase>("ready");
-  const [selectedAssetId, setSelectedAssetId] = useState(starterProject.assets[0]?.id ?? "");
+  const [phase, setPhase] = useState<AgentPhase>("idle");
+  const [selectedAssetId, setSelectedAssetId] = useState("");
   const [newProjectName, setNewProjectName] = useState("Lantern Grove");
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
     path: "~/Game Spark AI",
@@ -255,6 +255,7 @@ export default function App() {
         source: "codex-manifest",
       });
       setProject(manifest);
+      setLastPreviewProject(manifest);
       setSelectedAssetId(manifest.assets[0]?.id ?? "");
       setPhase("ready");
     });
@@ -315,6 +316,7 @@ export default function App() {
       const bridgeResult = await window.gameSpark?.startCodexRun?.(request);
       if (bridgeResult && "assets" in bridgeResult) {
         setProject(bridgeResult);
+        setLastPreviewProject(bridgeResult);
         setPhase("ready");
         setSelectedAssetId(bridgeResult.assets[0]?.id ?? "");
         return;
@@ -390,6 +392,7 @@ export default function App() {
       ],
     };
     setProject(updatedProject);
+    setLastPreviewProject(updatedProject);
     setSelectedAssetId(updatedProject.assets[0]?.id ?? "");
   }
 
@@ -397,6 +400,7 @@ export default function App() {
     logInteraction("existing_project_opened", { projectTitle });
     const nextProject = createManifest(projectTitle);
     setProject(nextProject);
+    setLastPreviewProject(nextProject);
     setSelectedAssetId(nextProject.assets[0]?.id ?? "");
     setPhase("ready");
     setEvents([]);
@@ -454,6 +458,7 @@ export default function App() {
           <Workspace
             promptBlocks={promptBlocks}
             project={project}
+            previewProject={lastPreviewProject}
             selectedAsset={selectedAsset}
             selectedAssetId={selectedAssetId}
             events={events}
@@ -839,6 +844,7 @@ function SupportedTypes() {
 function Workspace({
   promptBlocks,
   project,
+  previewProject,
   selectedAsset,
   selectedAssetId,
   events,
@@ -854,6 +860,7 @@ function Workspace({
 }: {
   promptBlocks: PromptBlock[];
   project: GameProjectManifest | null;
+  previewProject: GameProjectManifest | null;
   selectedAsset?: GameProjectAsset;
   selectedAssetId: string;
   events: AgentEvent[];
@@ -888,7 +895,7 @@ function Workspace({
         onIterate={onIterate}
         onInterrupt={onInterrupt}
       />
-      <GamePreviewPanel project={project} phase={phase} selectedAsset={selectedAsset} />
+      <GamePreviewPanel project={project} previewProject={previewProject} phase={phase} selectedAsset={selectedAsset} />
     </section>
   );
 }
@@ -1251,31 +1258,44 @@ function AgentProgress({
 
 function GamePreviewPanel({
   project,
+  previewProject,
   phase,
   selectedAsset,
 }: {
   project: GameProjectManifest | null;
+  previewProject: GameProjectManifest | null;
   phase: AgentPhase;
   selectedAsset?: GameProjectAsset;
 }) {
+  const isWorking = isCodexBusy(phase);
+  const hasPreview = Boolean(previewProject);
+  const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
+
   return (
     <section className="panel viewport-panel">
       <div className="section-heading">
         <h2>Game preview</h2>
-        <span>{project?.playCanvasEntry ?? "src/main.js"}</span>
+        <span>{previewProject?.playCanvasEntry ?? project?.playCanvasEntry ?? "Waiting"}</span>
       </div>
       <div className="viewport-stage">
-        <GamePreview project={project} phase={phase} selectedAsset={selectedAsset} />
+        {previewProject ? <GamePreview project={previewProject} phase={phase} selectedAsset={selectedAsset} /> : null}
+        {!previewProject ? (
+          <div className="preview-empty-state">
+            {isWorking ? <span className="preview-spinner" aria-hidden="true" /> : null}
+            <strong>{isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
+            <p>{isWorking ? "The first playable build will appear here when the agent finishes." : "Start a game generation from chat or the home page."}</p>
+          </div>
+        ) : null}
         <div className="viewport-hud">
-          <span>{phase === "ready" ? "Playtest ready" : "Generating preview"}</span>
-          <span>HD2D preview</span>
+          <span>{previewStatus}</span>
+          <span>{isWorking && hasPreview ? "New version building" : "Game preview"}</span>
         </div>
       </div>
       <div className="control-bar">
-        <button type="button" disabled={phase !== "ready"}>
+        <button type="button" disabled={!hasPreview}>
           Play
         </button>
-        <button className="secondary-button" type="button" disabled={phase !== "ready"}>
+        <button className="secondary-button" type="button" disabled={!hasPreview || isWorking}>
           Publish local build
         </button>
       </div>
