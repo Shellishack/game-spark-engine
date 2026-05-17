@@ -101,6 +101,88 @@ const categoryTemplates = [
     type: "Platformer",
   },
 ];
+const randomGameIdeas = [
+  {
+    title: "Rainy Neon Courier",
+    prompt: "Create a neon city delivery game where a scooter courier dodges drones, upgrades routes, and uncovers a mystery package network.",
+  },
+  {
+    title: "Mushroom Kingdom Cafe",
+    prompt: "Create a cozy fantasy cafe builder where mushroom villagers request recipes, decorate rooms, and unlock forest festivals.",
+  },
+  {
+    title: "Clocktower Spell School",
+    prompt: "Create a magical academy RPG where students bend time in puzzle rooms, duel rivals, and repair a broken clocktower.",
+  },
+  {
+    title: "Sky Whale Rescue",
+    prompt: "Create an airborne exploration game where pilots rescue sky whales, gather storm crystals, and upgrade a floating base.",
+  },
+  {
+    title: "Dungeon Gardening Club",
+    prompt: "Create a dungeon gardening roguelike where players plant traps, grow monster allies, and survive adventurer waves.",
+  },
+  {
+    title: "Tiny Mech Postal Service",
+    prompt: "Create a miniature mech delivery game where players cross oversized kitchens, repair routes, and upgrade stamp-powered gadgets.",
+  },
+  {
+    title: "Ghost Museum Night Shift",
+    prompt: "Create a spooky comedy adventure where a night guard interviews ghosts, rearranges cursed exhibits, and solves old mysteries.",
+  },
+  {
+    title: "Solarpunk Train Village",
+    prompt: "Create a solarpunk life sim on a moving train where players grow gardens, befriend passengers, and choose new rail destinations.",
+  },
+  {
+    title: "Bubble Mage Aquarium",
+    prompt: "Create an underwater spellcasting puzzle game where a bubble mage redirects currents, rescues sea creatures, and restores coral gates.",
+  },
+  {
+    title: "Paper Dragon Tactics",
+    prompt: "Create a paper-craft tactics game where foldable dragons change shapes, capture wind shrines, and combo terrain effects.",
+  },
+  {
+    title: "Midnight Snack Heist",
+    prompt: "Create a stealth comedy game where tiny kitchen creatures steal snacks, avoid sleepy humans, and build a secret pantry base.",
+  },
+  {
+    title: "Crystal Radio Rangers",
+    prompt: "Create an exploration RPG where rangers tune crystal radios to reveal hidden paths, recruit signal spirits, and stop a static storm.",
+  },
+  {
+    title: "Cloud Orchard Keeper",
+    prompt: "Create a sky-farming game where players grow floating fruit trees, tame weather, and trade harvests with airship towns.",
+  },
+  {
+    title: "Robot Theater Troupe",
+    prompt: "Create a narrative management game where robot actors rehearse plays, improvise dialogue, and win over different audience factions.",
+  },
+  {
+    title: "Library of Living Maps",
+    prompt: "Create a mystery adventure where players explore animated maps, rewrite landmarks, and chase a cartographer who vanished between pages.",
+  },
+  {
+    title: "Frog Knight Tournament",
+    prompt: "Create a whimsical action RPG where frog knights joust on lily pads, collect pond relics, and defend a rainy kingdom.",
+  },
+  {
+    title: "Asteroid Bakery League",
+    prompt: "Create a resource-management game where bakers mine asteroid flour, dodge meteor storms, and compete in zero-gravity pastry contests.",
+  },
+  {
+    title: "Dream Elevator Bureau",
+    prompt: "Create a surreal puzzle adventure where players operate an elevator between dreams, resolve strange requests, and repair broken memories.",
+  },
+  {
+    title: "Lantern Bug Expedition",
+    prompt: "Create a tiny exploration game where glowing beetle scouts map a giant backyard, solve dew puzzles, and protect their lantern queen.",
+  },
+  {
+    title: "Volcano Spa Resort",
+    prompt: "Create a cozy management game where players run a spa on a sleepy volcano, calm lava spirits, and craft mineral treatments.",
+  },
+];
 
 export default function App() {
   const [view, setView] = useState<"home" | "workspace">("home");
@@ -156,9 +238,10 @@ export default function App() {
     [project, selectedAssetId],
   );
 
-  async function startRun(mode: CodexRunRequest["mode"], explicitIntent?: CodexRunRequest["workflowIntent"]) {
-    const prompt = promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
-    const nextProject = mode === "create" ? createManifest(newProjectName.trim() || titleFromPrompt(prompt)) : project ?? createManifest(titleFromPrompt(prompt));
+  async function startRun(mode: CodexRunRequest["mode"], explicitIntent?: CodexRunRequest["workflowIntent"], overrides?: { prompt?: string; projectName?: string }) {
+    const prompt = overrides?.prompt ?? promptBlocks.map(blockToPromptText).filter(Boolean).join("\n\n");
+    const nextProject =
+      mode === "create" ? createManifest(overrides?.projectName?.trim() || newProjectName.trim() || titleFromPrompt(prompt)) : project ?? createManifest(titleFromPrompt(prompt));
     const workflowIntent = explicitIntent ?? classifyWorkflowIntent(prompt, mode);
     const request: CodexRunRequest = {
       projectId: nextProject.id,
@@ -282,6 +365,7 @@ export default function App() {
             onSelectWorkspace={selectWorkspace}
             onResetWorkspace={resetWorkspace}
             onStart={() => startRun("create", "game_update")}
+            onStartIdea={(idea) => startRun("create", "game_update", idea)}
             onOpenProject={openExistingProject}
             projectName={newProjectName}
             onProjectNameChange={setNewProjectName}
@@ -396,6 +480,7 @@ function Home(
     onSelectWorkspace: () => void;
     onResetWorkspace: () => void;
     onStart: () => void;
+    onStartIdea: (idea: { projectName: string; prompt: string }) => void;
     onOpenProject: (projectTitle: string) => void;
     projectName: string;
     onProjectNameChange: (value: string) => void;
@@ -404,69 +489,68 @@ function Home(
   return (
     <section className="home-view">
       <div className="brand-row">
-        <div className="brand-copy">
-          <h1>Game Spark AI</h1>
-          <div className="headline-carousel" aria-label="Game Spark AI highlights">
-            <div>
-              <span>Ship astonishing games with Codex</span>
-              <span>Build your dream game in minutes</span>
-              <span>Cursor but for games</span>
-              <span>AI native game engine</span>
+        <div className="home-brand">
+          <div className="home-brand-badge">GS</div>
+          <div className="brand-copy">
+            <h1>Game Spark AI</h1>
+            <div className="headline-carousel" aria-label="Game Spark AI highlights">
+              <div>
+                <span>Ship astonishing games with Codex</span>
+                <span>Build your dream game in minutes</span>
+                <span>Cursor but for games</span>
+                <span>AI native game engine</span>
+              </div>
             </div>
           </div>
         </div>
-        <span className="status-pill">Local Codex backend</span>
+        <nav className="home-tabs" aria-label="Main page tabs">
+          <button className="active" type="button" onClick={() => document.querySelector(".home-view")?.scrollTo({ top: 0, behavior: "smooth" })}>
+            Home
+          </button>
+          <button type="button" onClick={() => document.getElementById("home-hub")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            Hub
+          </button>
+        </nav>
+        <div className="home-top-actions">
+          <span className="status-pill">Local Codex backend</span>
+        </div>
       </div>
 
-      <PromptComposer
-        showGameSelectors
-        projectNameControls={{
-          value: props.projectName,
-          onChange: props.onProjectNameChange,
-        }}
-        workspaceControls={{
-          workspace: props.workspace,
-          onSelectWorkspace: props.onSelectWorkspace,
-          onResetWorkspace: props.onResetWorkspace,
-        }}
-        promptBlocks={props.promptBlocks}
-        actionLabel="Generate game"
-        onDraftChange={props.onDraftChange}
-        onAddAttachment={props.onAddAttachment}
-        onSubmit={props.onStart}
-      />
-
-      <ExistingProjects onOpenProject={props.onOpenProject} />
-
-      <section className="gallery-band" aria-label="Published games">
-        <div className="section-heading">
-          <h2>Published locally</h2>
-          <span>{publishedGames.length} builds</span>
+      <div className="home-hub-grid" id="home-hub">
+        <div className="home-main-column">
+          <PromptComposer
+            showGameSelectors
+            projectNameControls={{
+              value: props.projectName,
+              onChange: props.onProjectNameChange,
+            }}
+            workspaceControls={{
+              workspace: props.workspace,
+              onSelectWorkspace: props.onSelectWorkspace,
+              onResetWorkspace: props.onResetWorkspace,
+            }}
+            promptBlocks={props.promptBlocks}
+            actionLabel="Generate game"
+            onDraftChange={props.onDraftChange}
+            onAddAttachment={props.onAddAttachment}
+            onSubmit={props.onStart}
+          />
+          <RecentGames onOpenProject={props.onOpenProject} />
         </div>
-        <div className="game-gallery">
-          {publishedGames.map((game) => (
-            <article className="game-card" key={game.id}>
-              <div className="game-thumb" style={{ backgroundColor: game.thumbnailColor }}>
-                <span>{game.title.slice(0, 2)}</span>
-              </div>
-              <div>
-                <h3>{game.title}</h3>
-                <p>{game.description}</p>
-                <code>{game.path}</code>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+        <aside className="home-side-column">
+          <RandomIdeas onPickIdea={props.onProjectNameChange} onDraftChange={props.onDraftChange} onStartIdea={props.onStartIdea} />
+          <SupportedTypes />
+        </aside>
+      </div>
     </section>
   );
 }
 
-function ExistingProjects({ onOpenProject }: { onOpenProject: (projectTitle: string) => void }) {
+function RecentGames({ onOpenProject }: { onOpenProject: (projectTitle: string) => void }) {
   return (
     <section className="existing-projects-band" aria-label="Existing projects">
       <div className="section-heading">
-        <h2>Existing projects</h2>
+        <h2>Recent games</h2>
         <span>{existingProjects.length} workspaces</span>
       </div>
       <div className="existing-project-grid">
@@ -478,14 +562,16 @@ function ExistingProjects({ onOpenProject }: { onOpenProject: (projectTitle: str
             <div>
               <h3>{project.title}</h3>
               <p>{project.description}</p>
+            </div>
+            <div className="existing-project-footer">
               <div className="project-card-meta">
                 <span>{project.status}</span>
                 <span>{project.updated}</span>
               </div>
+              <button type="button" onClick={() => onOpenProject(project.title)}>
+                Open
+              </button>
             </div>
-            <button type="button" onClick={() => onOpenProject(project.title)}>
-              Open
-            </button>
           </article>
         ))}
       </div>
@@ -493,15 +579,71 @@ function ExistingProjects({ onOpenProject }: { onOpenProject: (projectTitle: str
   );
 }
 
+function RandomIdeas({
+  onPickIdea,
+  onDraftChange,
+  onStartIdea,
+}: {
+  onPickIdea: (projectTitle: string) => void;
+  onDraftChange: (content: string) => void;
+  onStartIdea: (idea: { projectName: string; prompt: string }) => void;
+}) {
+  const [idea, setIdea] = useState(randomGameIdeas[0]);
+  function shuffleIdea() {
+    setIdea((current) => {
+      const pool = randomGameIdeas.filter((candidate) => candidate.title !== current.title);
+      return pool[Math.floor(Math.random() * pool.length)] ?? current;
+    });
+  }
+  function buildIdea() {
+    onPickIdea(idea.title);
+    onDraftChange(idea.prompt);
+    onStartIdea({ projectName: idea.title, prompt: idea.prompt });
+  }
+
+  return (
+    <section className="random-idea-band" aria-label="Try something random">
+      <div className="section-heading">
+        <h2>Try something random</h2>
+        <span>1 click</span>
+      </div>
+      <div className="random-idea-card">
+        <div className="random-idea-thumb">
+          <span>{idea.title.slice(0, 2)}</span>
+        </div>
+        <div>
+          <h3>{idea.title}</h3>
+          <p>{idea.prompt}</p>
+        </div>
+      </div>
+      <div className="random-idea-actions">
+        <button className="secondary-button" type="button" onClick={shuffleIdea}>
+          Shuffle
+        </button>
+        <button type="button" onClick={buildIdea}>
+          Build this
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function SupportedTypes() {
+  const pageSize = 3;
+  const [page, setPage] = useState(0);
+  const pageCount = Math.ceil(categoryTemplates.length / pageSize);
+  const visibleTemplates = categoryTemplates.slice(page * pageSize, page * pageSize + pageSize);
+
   return (
     <section className="template-band" aria-label="Game type templates">
       <div className="section-heading">
         <h2>Game templates</h2>
-        <span>{categoryTemplates.length} starters</span>
+        <span>
+          {page + 1} / {pageCount}
+        </span>
       </div>
       <div className="template-grid">
-        {categoryTemplates.map((template) => (
+        {visibleTemplates.map((template) => (
           <article className="template-card" key={template.title}>
             <div className="template-icon">{template.icon}</div>
             <div>
@@ -511,6 +653,19 @@ function SupportedTypes() {
             </div>
           </article>
         ))}
+      </div>
+      <div className="template-pagination" aria-label="Template pagination">
+        <button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0}>
+          Previous
+        </button>
+        <div>
+          {Array.from({ length: pageCount }, (_, index) => (
+            <span className={index === page ? "active" : ""} key={index} />
+          ))}
+        </div>
+        <button type="button" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={page === pageCount - 1}>
+          Next
+        </button>
       </div>
       <div className="support-inline" aria-label="Supported styles">
         <span>Supported types</span>
