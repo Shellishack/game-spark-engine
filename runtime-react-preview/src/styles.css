@@ -897,20 +897,35 @@ pre {
 }
 
 .random-idea-thumb {
+  position: relative;
   display: grid;
-  height: 116px;
+  width: 100%;
+  aspect-ratio: 1;
   place-items: center;
   border: 3px solid var(--line);
   border-radius: 20px 14px 18px 16px;
-  background:
-    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.45), transparent 24%),
-    linear-gradient(135deg, var(--primary), var(--pink));
+  background-color: var(--primary-soft);
+  background-repeat: no-repeat;
+  background-size: 500% 400%;
   box-shadow: 3px 4px 0 var(--line);
   color: var(--secondary);
   font-family: "JetBrains Mono", monospace;
   font-size: 1.3rem;
   font-weight: 900;
   transform: rotate(1deg);
+  overflow: hidden;
+}
+
+.random-idea-thumb::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.02);
+  content: "";
+}
+
+.random-idea-thumb span {
+  display: none;
 }
 
 .random-idea-card h3 {

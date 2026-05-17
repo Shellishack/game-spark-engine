@@ -8,6 +8,7 @@ import {
   starterProject,
 } from "./codexPipeline";
 import { GamePreview } from "./PlayCanvasPreview";
+import shuffleIdeaAtlasUrl from "./assets/shuffle-idea-atlas.png";
 import type {
   AgentEvent,
   AgentPhase,
@@ -600,15 +601,23 @@ function RandomIdeas({
     onDraftChange(idea.prompt);
     onStartIdea({ projectName: idea.title, prompt: idea.prompt });
   }
+  const ideaIndex = randomGameIdeas.findIndex((candidate) => candidate.title === idea.title);
+  const atlasColumn = Math.max(0, ideaIndex % 5);
+  const atlasRow = Math.max(0, Math.floor(ideaIndex / 5));
 
   return (
     <section className="random-idea-band" aria-label="Try something random">
       <div className="section-heading">
         <h2>Try something random</h2>
-        <span>1 click</span>
       </div>
       <div className="random-idea-card">
-        <div className="random-idea-thumb">
+        <div
+          className="random-idea-thumb"
+          style={{
+            backgroundImage: `url(${shuffleIdeaAtlasUrl})`,
+            backgroundPosition: `${atlasColumn * 25}% ${atlasRow * 33.3333}%`,
+          }}
+        >
           <span>{idea.title.slice(0, 2)}</span>
         </div>
         <div>
