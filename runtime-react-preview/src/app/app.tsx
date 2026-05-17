@@ -6,7 +6,6 @@ import {
   publishedGames,
   spriteEmotions,
 } from "../data/codex-pipeline";
-import { GamePreview } from "./play-canvas-preview";
 import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
 import type {
   AgentEvent,
@@ -16,6 +15,7 @@ import type {
   GameProjectManifest,
   PromptBlock,
   WorkspaceInfo,
+  WorkspaceProjectSummary,
 } from "../types/project-types";
 
 const phaseLabels: Record<AgentPhase, string> = {
@@ -31,32 +31,6 @@ const phaseLabels: Record<AgentPhase, string> = {
 
 const supportedGameTypes = ["Platformer", "Top down RPG", "Isometric strategy", "First person shooter"];
 const supportedStyles = ["2D", "HD2D", "3D"];
-const existingProjects = [
-  {
-    id: "lantern-grove",
-    title: "Lantern Grove",
-    description: "Forest mystery prototype with NPCs, moon shards, and a bridge unlock.",
-    updated: "Today",
-    status: "Playable",
-    color: "#3a6f68",
-  },
-  {
-    id: "clockwork-harbor",
-    title: "Clockwork Harbor",
-    description: "Puzzle RPG workspace with harbor machines and timing gates.",
-    updated: "Yesterday",
-    status: "Iterating",
-    color: "#8f6d40",
-  },
-  {
-    id: "skyline-ruins",
-    title: "Skyline Ruins",
-    description: "Isometric traversal test with generated props and billboard actors.",
-    updated: "This week",
-    status: "Draft",
-    color: "#596b9a",
-  },
-];
 const categoryTemplates = [
   {
     title: "Classic RPG",
@@ -193,6 +167,8 @@ export default function App() {
   const [phase, setPhase] = useState<AgentPhase>("idle");
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [newProjectName, setNewProjectName] = useState("Lantern Grove");
+  const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectSummary[]>([]);
+  const [previewableProjectIds, setPreviewableProjectIds] = useState<Set<string>>(new Set());
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
     path: "~/Game Spark AI",
     defaultPath: "~/Game Spark AI",
@@ -205,6 +181,7 @@ export default function App() {
 
   useEffect(() => {
     window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
+    refreshWorkspaceProjects();
   }, []);
 
   useEffect(() => {
@@ -246,17 +223,21 @@ export default function App() {
       ]);
     });
     const offManifest = window.gameSpark?.onCodexManifest?.((manifest) => {
+      const normalizedManifest = normalizeManifest(manifest);
       logInteraction("agent_response", {
-        projectId: manifest.id,
-        projectTitle: manifest.title,
+        projectId: normalizedManifest.id,
+        projectTitle: normalizedManifest.title,
         phase: "ready",
         title: "Project manifest updated",
-        content: `Updated local project manifest with ${manifest.assets.length} assets.`,
+        content: `Updated local project manifest with ${normalizedManifest.assets.length} assets.`,
         source: "codex-manifest",
       });
-      setProject(manifest);
-      setLastPreviewProject(manifest);
-      setSelectedAssetId(manifest.assets[0]?.id ?? "");
+      setProject(normalizedManifest);
+      refreshWorkspaceProjects().then((projects) => {
+        const summary = projects.find((item) => item.id === normalizedManifest.id);
+        setLastPreviewProject(summary?.hasBuild ? normalizedManifest : null);
+      });
+      setSelectedAssetId(normalizedManifest.assets[0]?.id ?? "");
       setPhase("ready");
     });
 
@@ -279,6 +260,7 @@ export default function App() {
     const workflowIntent = explicitIntent ?? classifyWorkflowIntent(prompt, mode);
     const request: CodexRunRequest = {
       projectId: nextProject.id,
+      projectTitle: nextProject.title,
       prompt,
       mode,
       workflowIntent,
@@ -309,19 +291,25 @@ export default function App() {
 
     setView("workspace");
     setProject(nextProject);
+    setLastPreviewProject(previewableProjectIds.has(nextProject.id) ? nextProject : null);
     setPhase(workflowIntent === "game_update" ? "planning" : "idle");
     setEvents([]);
 
     try {
       const bridgeResult = await window.gameSpark?.startCodexRun?.(request);
       if (bridgeResult && "assets" in bridgeResult) {
-        setProject(bridgeResult);
-        setLastPreviewProject(bridgeResult);
+        const normalizedProject = normalizeManifest(bridgeResult);
+        setProject(normalizedProject);
+        refreshWorkspaceProjects().then((projects) => {
+          const summary = projects.find((item) => item.id === normalizedProject.id);
+          setLastPreviewProject(summary?.hasBuild ? normalizedProject : null);
+        });
         setPhase("ready");
-        setSelectedAssetId(bridgeResult.assets[0]?.id ?? "");
+        setSelectedAssetId(normalizedProject.assets[0]?.id ?? "");
         return;
       }
       if (bridgeResult?.ok) {
+        refreshWorkspaceProjects();
         return;
       }
       if (bridgeResult && !bridgeResult.ok) {
@@ -392,15 +380,28 @@ export default function App() {
       ],
     };
     setProject(updatedProject);
-    setLastPreviewProject(updatedProject);
+    refreshWorkspaceProjects().then((projects) => {
+      const summary = projects.find((item) => item.id === updatedProject.id);
+      setLastPreviewProject(summary?.hasBuild ? updatedProject : null);
+    });
     setSelectedAssetId(updatedProject.assets[0]?.id ?? "");
   }
 
-  function openExistingProject(projectTitle: string) {
-    logInteraction("existing_project_opened", { projectTitle });
-    const nextProject = createManifest(projectTitle);
+  async function refreshWorkspaceProjects() {
+    const projects = await window.gameSpark?.listWorkspaceProjects?.();
+    if (projects) {
+      setWorkspaceProjects(projects);
+      setPreviewableProjectIds(new Set(projects.filter((item) => item.hasBuild).map((item) => item.id)));
+      return projects;
+    }
+    return [];
+  }
+
+  function openExistingProject(projectSummary: WorkspaceProjectSummary) {
+    logInteraction("existing_project_opened", { projectId: projectSummary.id, projectTitle: projectSummary.title, path: projectSummary.path });
+    const nextProject = normalizeManifest(projectSummary.manifest);
     setProject(nextProject);
-    setLastPreviewProject(nextProject);
+    setLastPreviewProject(projectSummary.hasBuild ? nextProject : null);
     setSelectedAssetId(nextProject.assets[0]?.id ?? "");
     setPhase("ready");
     setEvents([]);
@@ -451,6 +452,7 @@ export default function App() {
             onStart={() => startRun("create", "game_update")}
             onStartIdea={(idea) => startRun("create", "game_update", idea)}
             onOpenProject={openExistingProject}
+            workspaceProjects={workspaceProjects}
             projectName={newProjectName}
             onProjectNameChange={setNewProjectName}
           />
@@ -459,6 +461,7 @@ export default function App() {
             promptBlocks={promptBlocks}
             project={project}
             previewProject={lastPreviewProject}
+            previewableProjectIds={previewableProjectIds}
             selectedAsset={selectedAsset}
             selectedAssetId={selectedAssetId}
             events={events}
@@ -485,6 +488,7 @@ export default function App() {
     if (nextWorkspace) {
       logInteraction("workspace_selected", { path: nextWorkspace.path, usesDefault: nextWorkspace.path === nextWorkspace.defaultPath });
       setWorkspace(nextWorkspace);
+      refreshWorkspaceProjects();
     }
   }
 
@@ -493,6 +497,7 @@ export default function App() {
     if (nextWorkspace) {
       logInteraction("workspace_reset", { path: nextWorkspace.path });
       setWorkspace(nextWorkspace);
+      refreshWorkspaceProjects();
     }
   }
 
@@ -597,7 +602,8 @@ function Home(
     onResetWorkspace: () => void;
     onStart: () => void;
     onStartIdea: (idea: { projectName: string; prompt: string }) => void;
-    onOpenProject: (projectTitle: string) => void;
+    onOpenProject: (project: WorkspaceProjectSummary) => void;
+    workspaceProjects: WorkspaceProjectSummary[];
     projectName: string;
     onProjectNameChange: (value: string) => void;
   },
@@ -664,7 +670,7 @@ function Home(
             onAddAttachment={props.onAddAttachment}
             onSubmit={props.onStart}
           />
-          <RecentGames onOpenProject={props.onOpenProject} />
+          <RecentGames projects={props.workspaceProjects} onOpenProject={props.onOpenProject} />
         </div>
         <aside className="home-side-column">
           <RandomIdeas onPickIdea={props.onProjectNameChange} onDraftChange={props.onDraftChange} onStartIdea={props.onStartIdea} />
@@ -675,15 +681,26 @@ function Home(
   );
 }
 
-function RecentGames({ onOpenProject }: { onOpenProject: (projectTitle: string) => void }) {
+function RecentGames({ projects, onOpenProject }: { projects: WorkspaceProjectSummary[]; onOpenProject: (project: WorkspaceProjectSummary) => void }) {
   return (
     <section className="existing-projects-band" aria-label="Existing projects">
       <div className="section-heading">
         <h2>Recent games</h2>
-        <span>{existingProjects.length} workspaces</span>
+        <span>{projects.length} workspaces</span>
       </div>
       <div className="existing-project-grid">
-        {existingProjects.map((project) => (
+        {projects.length === 0 ? (
+          <article className="existing-project-card empty">
+            <div className="existing-project-thumb">
+              <span>GS</span>
+            </div>
+            <div>
+              <h3>No local games yet</h3>
+              <p>Generated games in the selected workspace will appear here.</p>
+            </div>
+          </article>
+        ) : null}
+        {projects.map((project) => (
           <article className="existing-project-card" key={project.id}>
             <div className="existing-project-thumb" style={{ backgroundColor: project.color }}>
               <span>{project.title.slice(0, 2)}</span>
@@ -694,10 +711,10 @@ function RecentGames({ onOpenProject }: { onOpenProject: (projectTitle: string) 
             </div>
             <div className="existing-project-footer">
               <div className="project-card-meta">
-                <span>{project.status}</span>
-                <span>{project.updated}</span>
+                <span>{phaseLabels[project.status] ?? project.status}</span>
+                <span>{formatRelativeDate(project.updatedAt)}</span>
               </div>
-              <button type="button" onClick={() => onOpenProject(project.title)}>
+              <button type="button" onClick={() => onOpenProject(project)}>
                 Open
               </button>
             </div>
@@ -845,6 +862,7 @@ function Workspace({
   promptBlocks,
   project,
   previewProject,
+  previewableProjectIds,
   selectedAsset,
   selectedAssetId,
   events,
@@ -861,6 +879,7 @@ function Workspace({
   promptBlocks: PromptBlock[];
   project: GameProjectManifest | null;
   previewProject: GameProjectManifest | null;
+  previewableProjectIds: Set<string>;
   selectedAsset?: GameProjectAsset;
   selectedAssetId: string;
   events: AgentEvent[];
@@ -895,7 +914,7 @@ function Workspace({
         onIterate={onIterate}
         onInterrupt={onInterrupt}
       />
-      <GamePreviewPanel project={project} previewProject={previewProject} phase={phase} selectedAsset={selectedAsset} />
+      <GamePreviewPanel project={project} previewProject={previewProject} previewableProjectIds={previewableProjectIds} phase={phase} />
     </section>
   );
 }
@@ -1259,31 +1278,35 @@ function AgentProgress({
 function GamePreviewPanel({
   project,
   previewProject,
+  previewableProjectIds,
   phase,
-  selectedAsset,
 }: {
   project: GameProjectManifest | null;
   previewProject: GameProjectManifest | null;
+  previewableProjectIds: Set<string>;
   phase: AgentPhase;
-  selectedAsset?: GameProjectAsset;
 }) {
   const isWorking = isCodexBusy(phase);
-  const hasPreview = Boolean(previewProject);
+  const currentProjectHasBuild = project ? previewableProjectIds.has(project.id) : false;
+  const previousProjectHasBuild = previewProject ? previewableProjectIds.has(previewProject.id) : false;
+  const effectivePreviewProject = previousProjectHasBuild ? previewProject : !isWorking && currentProjectHasBuild ? project : null;
+  const hasPreview = Boolean(effectivePreviewProject);
+  const previewUrl = effectivePreviewProject ? buildProjectPreviewUrl(effectivePreviewProject) : "";
   const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
 
   return (
     <section className="panel viewport-panel">
       <div className="section-heading">
         <h2>Game preview</h2>
-        <span>{previewProject?.playCanvasEntry ?? project?.playCanvasEntry ?? "Waiting"}</span>
+        <span>{effectivePreviewProject?.playCanvasEntry ?? project?.playCanvasEntry ?? "Waiting"}</span>
       </div>
       <div className="viewport-stage">
-        {previewProject ? <GamePreview project={previewProject} phase={phase} selectedAsset={selectedAsset} /> : null}
-        {!previewProject ? (
+        {effectivePreviewProject ? <iframe className="game-preview-frame" src={previewUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
+        {!effectivePreviewProject ? (
           <div className="preview-empty-state">
             {isWorking ? <span className="preview-spinner" aria-hidden="true" /> : null}
             <strong>{isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
-            <p>{isWorking ? "The first playable build will appear here when the agent finishes." : "Start a game generation from chat or the home page."}</p>
+            <p>{isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
           </div>
         ) : null}
         <div className="viewport-hud">
@@ -1295,8 +1318,20 @@ function GamePreviewPanel({
         <button type="button" disabled={!hasPreview}>
           Play
         </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={!hasPreview}
+          onClick={() => {
+            if (!previewUrl) return;
+            logInteraction("preview_opened_in_window", { projectId: effectivePreviewProject?.id, projectTitle: effectivePreviewProject?.title });
+            window.gameSpark?.openPreviewWindow?.(previewUrl);
+          }}
+        >
+          Open in new window
+        </button>
         <button className="secondary-button" type="button" disabled={!hasPreview || isWorking}>
-          Publish local build
+          Publish local preview
         </button>
       </div>
     </section>
@@ -1415,8 +1450,8 @@ function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest 
           <dd>{project?.workspacePath ?? "new-game"}</dd>
         </div>
         <div>
-          <dt>Build</dt>
-          <dd>{project?.buildPath ?? "build/index.html"}</dd>
+          <dt>Preview</dt>
+          <dd>{project ? "Playable project preview" : "Not generated yet"}</dd>
         </div>
         <div>
           <dt>Runs</dt>
@@ -1430,6 +1465,98 @@ function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest 
 function blockToPromptText(block: PromptBlock) {
   if (block.type === "text") return block.content.trim();
   return `Attached file: ${block.name} (${block.sizeLabel})`;
+}
+
+function normalizeManifest(manifest: GameProjectManifest): GameProjectManifest {
+  const now = new Date().toISOString();
+  const id = typeof manifest.id === "string" ? manifest.id : slugifyTitle(manifest.title || "local-game");
+  const title = typeof manifest.title === "string" ? manifest.title : id;
+  const promptHistory = Array.isArray(manifest.promptHistory)
+    ? manifest.promptHistory.map((prompt, index) => {
+        const record = prompt as unknown as Record<string, unknown>;
+        return {
+          id: typeof record.id === "string" ? record.id : `prompt-${index + 1}`,
+          content: typeof record.content === "string" ? record.content : typeof record.prompt === "string" ? record.prompt : "",
+          createdAt: typeof record.createdAt === "string" ? record.createdAt : typeof record.timestamp === "string" ? record.timestamp : now,
+        };
+      })
+    : [];
+  const runHistory = Array.isArray(manifest.runHistory)
+    ? manifest.runHistory.map((run, index) => {
+        const record = run as unknown as Record<string, unknown>;
+        const status = typeof record.status === "string" && record.status in phaseLabels ? (record.status as AgentPhase) : "ready";
+        return {
+          id: typeof record.id === "string" ? record.id : `run-${index + 1}`,
+          createdAt: typeof record.createdAt === "string" ? record.createdAt : typeof record.timestamp === "string" ? record.timestamp : now,
+          status,
+          summary: typeof record.summary === "string" ? record.summary : typeof record.mode === "string" ? `${record.mode} run` : "Local game run.",
+        };
+      })
+    : [];
+  const assets = Array.isArray(manifest.assets)
+    ? manifest.assets.map((asset, index) => {
+        const record = asset as unknown as Record<string, unknown>;
+        const kind = typeof record.kind === "string" && ["sprite", "model", "texture", "script", "scene"].includes(record.kind) ? record.kind : "texture";
+        const source = typeof record.source === "string" && ["generated", "imported", "system"].includes(record.source) ? record.source : "generated";
+        return {
+          id: typeof record.id === "string" ? record.id : `asset-${index + 1}`,
+          name: typeof record.name === "string" ? record.name : `Asset ${index + 1}`,
+          kind: kind as GameProjectAsset["kind"],
+          path: typeof record.path === "string" ? record.path : "",
+          source: source as GameProjectAsset["source"],
+          previewColor: typeof record.previewColor === "string" ? record.previewColor : "#d7c66a",
+          usage: typeof record.usage === "string" ? record.usage : "Project asset",
+          metadata: record.metadata && typeof record.metadata === "object" ? (record.metadata as GameProjectAsset["metadata"]) : undefined,
+        };
+      })
+    : [];
+
+  return {
+    id,
+    title,
+    style: "HD2D",
+    createdAt: typeof manifest.createdAt === "string" ? manifest.createdAt : now,
+    updatedAt: typeof manifest.updatedAt === "string" ? manifest.updatedAt : now,
+    workspacePath: typeof manifest.workspacePath === "string" ? manifest.workspacePath : id,
+    playCanvasEntry: typeof manifest.playCanvasEntry === "string" ? manifest.playCanvasEntry : "src/main.js",
+    buildPath: typeof manifest.buildPath === "string" ? manifest.buildPath : `${id}/build/index.html`,
+    publishedPath: typeof manifest.publishedPath === "string" ? manifest.publishedPath : undefined,
+    promptHistory,
+    runHistory,
+    assets,
+  };
+}
+
+function buildProjectPreviewUrl(project: GameProjectManifest) {
+  const projectId = project.workspacePath || project.id;
+  const normalizedBuildPath = (project.buildPath || "build/index.html").replace(/\\/g, "/").replace(/^\/+/, "");
+  const projectPrefix = `${projectId}/`;
+  const relativeBuildPath = normalizedBuildPath.startsWith(projectPrefix) ? normalizedBuildPath.slice(projectPrefix.length) : normalizedBuildPath;
+  return `game-spark://${encodeURIComponent(projectId)}/${relativeBuildPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/")}`;
+}
+
+function formatRelativeDate(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Unknown";
+  const diffMs = Date.now() - timestamp;
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (diffMs < 60 * 1000) return "Just now";
+  if (diffMs < dayMs) return "Today";
+  if (diffMs < dayMs * 2) return "Yesterday";
+  if (diffMs < dayMs * 7) return "This week";
+  return new Date(timestamp).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function slugifyTitle(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "local-game";
 }
 
 function formatCodexLogForDisplay(text: string) {

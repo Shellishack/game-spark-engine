@@ -1,4 +1,4 @@
-const { BrowserWindow, app, dialog, ipcMain } = require("electron");
+const { BrowserWindow, app, dialog, ipcMain, protocol } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -8,6 +8,18 @@ const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
 let activeCodexChild = null;
 const interactionLogSessions = new Map();
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "game-spark",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
@@ -111,6 +123,26 @@ async function getWorkspaceInfo() {
   };
 }
 
+function registerProjectProtocol() {
+  protocol.registerFileProtocol("game-spark", (request, callback) => {
+    const parsed = new URL(request.url);
+    const projectId = decodeURIComponent(parsed.hostname);
+    const requestPath = decodeURIComponent(parsed.pathname.replace(/^\/+/, "")) || "build/index.html";
+
+    workspaceRoot()
+      .then((root) => {
+        const projectRoot = path.resolve(root, projectId);
+        const filePath = path.resolve(projectRoot, requestPath);
+        if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
+          callback({ error: -10 });
+          return;
+        }
+        callback({ path: filePath });
+      })
+      .catch(() => callback({ error: -2 }));
+  });
+}
+
 async function selectWorkspaceFolder() {
   const result = await dialog.showOpenDialog({
     title: "Choose Game Spark AI workspace",
@@ -140,19 +172,152 @@ async function resetWorkspaceFolder() {
   return getWorkspaceInfo();
 }
 
+async function listWorkspaceProjects() {
+  const root = await workspaceRoot();
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  const projects = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const projectDir = path.join(root, entry.name);
+    const manifestPath = path.join(projectDir, "manifest.json");
+
+    try {
+      const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+      const updatedAt = typeof manifest.updatedAt === "string" ? manifest.updatedAt : new Date().toISOString();
+      const latestRun = Array.isArray(manifest.runHistory) ? manifest.runHistory[0] : null;
+      const status = typeof latestRun?.status === "string" ? latestRun.status : "ready";
+      const rawBuildPath = typeof manifest.buildPath === "string" ? manifest.buildPath : "build/index.html";
+      const projectPrefix = `${entry.name}${path.sep}`;
+      const normalizedBuildPath = rawBuildPath.replace(/[\\/]+/g, path.sep);
+      const relativeBuildPath = normalizedBuildPath.startsWith(projectPrefix) ? normalizedBuildPath.slice(projectPrefix.length) : normalizedBuildPath;
+      const hasBuild = await fileExists(path.join(projectDir, relativeBuildPath));
+      const description =
+        typeof latestRun?.summary === "string"
+          ? latestRun.summary
+          : Array.isArray(manifest.promptHistory) && manifest.promptHistory[0]
+            ? String(manifest.promptHistory[0].content || manifest.promptHistory[0].prompt || "Local game project.")
+            : "Local game project.";
+
+      projects.push({
+        id: typeof manifest.id === "string" ? manifest.id : entry.name,
+        title: typeof manifest.title === "string" ? manifest.title : entry.name,
+        description,
+        updatedAt,
+        status,
+        color: colorFromProject(entry.name),
+        path: projectDir,
+        hasBuild,
+        manifest,
+      });
+    } catch {
+      /* Non-project folders are ignored. */
+    }
+  }
+
+  return projects.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+async function fileExists(filePath) {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function colorFromProject(value) {
+  const colors = ["#3a6f68", "#8f6d40", "#596b9a", "#9b5f6e", "#5f7f45", "#7c5d9b"];
+  let hash = 0;
+  for (const char of String(value)) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return colors[hash % colors.length];
+}
+
 async function ensureProject(request) {
   const root = await workspaceRoot();
   const projectDir = path.join(root, request.projectId || "new-hd2d-game");
   const runId = new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.join(projectDir, "runs", runId);
+  const now = new Date().toISOString();
 
   await fs.mkdir(path.join(projectDir, "src"), { recursive: true });
   await fs.mkdir(path.join(projectDir, "assets", "sprites"), { recursive: true });
   await fs.mkdir(path.join(projectDir, "assets", "models"), { recursive: true });
   await fs.mkdir(runDir, { recursive: true });
   await fs.writeFile(path.join(runDir, "prompt.md"), request.prompt || "", "utf8");
+  await upsertInitialManifest(projectDir, request, runId, now);
 
   return { projectDir, runDir, runId };
+}
+
+async function upsertInitialManifest(projectDir, request, runId, now) {
+  const manifestPath = path.join(projectDir, "manifest.json");
+  let manifest = null;
+
+  try {
+    manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+  } catch {
+    manifest = null;
+  }
+
+  const projectId = request.projectId || path.basename(projectDir);
+  const projectTitle = request.projectTitle || titleFromProjectId(projectId);
+  const promptEntry = {
+    id: `prompt-${runId}`,
+    content: request.prompt || "",
+    createdAt: now,
+  };
+  const runEntry = {
+    id: `run-${runId}`,
+    createdAt: now,
+    status: request.workflowIntent === "game_update" ? "planning" : "idle",
+    summary: request.workflowIntent === "game_update" ? "Game generation started." : "Conversation started.",
+  };
+
+  if (!manifest || typeof manifest !== "object") {
+    manifest = {
+      id: projectId,
+      title: projectTitle,
+      style: "HD2D",
+      createdAt: now,
+      updatedAt: now,
+      workspacePath: projectId,
+      playCanvasEntry: "src/main.js",
+      buildPath: `${projectId}/build/index.html`,
+      publishedPath: `published/${projectId}/index.html`,
+      promptHistory: [promptEntry],
+      runHistory: [runEntry],
+      assets: [],
+    };
+  } else {
+    manifest.id = typeof manifest.id === "string" ? manifest.id : projectId;
+    manifest.title = typeof manifest.title === "string" ? manifest.title : projectTitle;
+    manifest.style = typeof manifest.style === "string" ? manifest.style : "HD2D";
+    manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
+    manifest.updatedAt = now;
+    manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : projectId;
+    manifest.playCanvasEntry = typeof manifest.playCanvasEntry === "string" ? manifest.playCanvasEntry : "src/main.js";
+    manifest.buildPath = typeof manifest.buildPath === "string" ? manifest.buildPath : `${projectId}/build/index.html`;
+    manifest.publishedPath = typeof manifest.publishedPath === "string" ? manifest.publishedPath : `published/${projectId}/index.html`;
+    manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
+    manifest.runHistory = Array.isArray(manifest.runHistory) ? manifest.runHistory : [];
+    manifest.assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+    manifest.promptHistory.push(promptEntry);
+    manifest.runHistory.unshift(runEntry);
+  }
+
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+}
+
+function titleFromProjectId(projectId) {
+  return String(projectId)
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "New Game";
 }
 
 async function readGameSparkSkill() {
@@ -416,12 +581,36 @@ async function createWindow() {
   }
 }
 
+async function openPreviewWindow(_event, url) {
+  if (typeof url !== "string" || !url.startsWith("game-spark://")) {
+    return { ok: false, error: "Invalid preview URL." };
+  }
+
+  const previewWindow = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 960,
+    minHeight: 640,
+    backgroundColor: "#090d16",
+    title: "Game Spark Preview",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  await previewWindow.loadURL(url);
+  return { ok: true };
+}
+
 ipcMain.handle("codex:start-run", startCodexRun);
 ipcMain.handle("codex:stop-run", stopCodexRun);
 ipcMain.handle("workspace:get", getWorkspaceInfo);
 ipcMain.handle("workspace:select", selectWorkspaceFolder);
 ipcMain.handle("workspace:reset", resetWorkspaceFolder);
+ipcMain.handle("workspace:list-projects", listWorkspaceProjects);
 ipcMain.handle("interaction:log", logInteraction);
+ipcMain.handle("preview:open-window", openPreviewWindow);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -435,7 +624,10 @@ ipcMain.handle("window:toggle-maximize", (event) => {
 });
 ipcMain.handle("window:close", (event) => BrowserWindow.fromWebContents(event.sender)?.close());
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  registerProjectProtocol();
+  return createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

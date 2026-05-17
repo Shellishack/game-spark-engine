@@ -61,6 +61,7 @@ export type PublishedGame = {
 
 export type CodexRunRequest = {
   projectId: string;
+  projectTitle?: string;
   prompt: string;
   mode: "chat" | "create" | "iterate";
   workflowIntent: "conversation" | "game_update";
@@ -70,6 +71,18 @@ export type CodexRunRequest = {
 export type WorkspaceInfo = {
   path: string;
   defaultPath: string;
+};
+
+export type WorkspaceProjectSummary = {
+  id: string;
+  title: string;
+  description: string;
+  updatedAt: string;
+  status: AgentPhase;
+  color: string;
+  path: string;
+  hasBuild: boolean;
+  manifest: GameProjectManifest;
 };
 
 export type CodexRunStartResult = {
@@ -92,7 +105,9 @@ export type GameSparkBridge = {
   getWorkspace?: () => Promise<WorkspaceInfo>;
   selectWorkspace?: () => Promise<WorkspaceInfo>;
   resetWorkspace?: () => Promise<WorkspaceInfo>;
+  listWorkspaceProjects?: () => Promise<WorkspaceProjectSummary[]>;
   logInteraction?: (interaction: { type: string; payload?: Record<string, unknown> }) => Promise<{ ok: boolean; path?: string }>;
+  openPreviewWindow?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   minimizeWindow?: () => Promise<void>;
   toggleMaximizeWindow?: () => Promise<boolean>;
   closeWindow?: () => Promise<void>;
