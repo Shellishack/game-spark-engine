@@ -40,6 +40,12 @@ contextBridge.exposeInMainWorld("gameSpark", {
   rebuildPreview(projectId) {
     return ipcRenderer.invoke("preview:rebuild", projectId);
   },
+  readSceneFile(projectId, scenePath) {
+    return ipcRenderer.invoke("scene:read", projectId, scenePath);
+  },
+  updateSceneObject(projectId, scenePath, objectId, transform) {
+    return ipcRenderer.invoke("scene:update-object", projectId, scenePath, objectId, transform);
+  },
   minimizeWindow() {
     return ipcRenderer.invoke("window:minimize");
   },

@@ -2,20 +2,20 @@
 
 ## Project Shape
 
-Game Spark AI is a local-first Electron and React app for an AI-native game engine workflow. The app UI lives in `runtime-react-preview`, while reusable agent instructions live in `skills/`.
+Game Spark AI is a local-first Electron and React app for an AI-native game engine workflow. The app UI lives in `engine`, while reusable agent instructions live in `skills/`.
 
 Use the existing app structure before adding new directories:
 
-- `runtime-react-preview/electron/` for Electron main and preload code.
-- `runtime-react-preview/src/app/` for the React app shell and primary UI.
-- `runtime-react-preview/src/data/` for mocked pipeline data and app copy.
-- `runtime-react-preview/src/runtime/` for generated preview/runtime helpers.
-- `runtime-react-preview/src/types/` for shared TypeScript contracts.
+- `engine/electron/` for Electron main and preload code.
+- `engine/src/app/` for the React app shell and primary UI.
+- `engine/src/data/` for mocked pipeline data and app copy.
+- `engine/src/runtime/` for generated preview/runtime helpers.
+- `engine/src/types/` for shared TypeScript contracts.
 - `skills/game-spark-agent/` for the backend agent loop and game-generation behavior.
 
 ## Development
 
-Run commands from `runtime-react-preview` unless the task clearly targets repo-level files.
+Run commands from `engine` unless the task clearly targets repo-level files.
 
 Common checks:
 

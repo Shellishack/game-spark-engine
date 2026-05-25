@@ -10,6 +10,22 @@ import {
 } from "../data/codex-pipeline";
 import { buildPromptFromTemplate, gameCreationTemplates, templateSupportsPhaser } from "../data/game-templates";
 import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
+import { phaseLabels, randomGameIdeas, supportedEngines, supportedGameTypes, supportedStyles } from "./app-constants";
+import {
+  blockToPromptText,
+  classifyWorkflowIntent,
+  engineForTemplate,
+  engineLabel,
+  findDuplicateProject,
+  formatCodexLogForDisplay,
+  formatRelativeDate,
+  isCodexBusy,
+  isValidEnvName,
+  normalizeManifest,
+  titleFromPrompt,
+  wait,
+} from "./app-utils";
+import { GamePreviewPanel } from "./components/game-preview-panel";
 import type {
   AgentEvent,
   AgentPhase,
@@ -24,103 +40,6 @@ import type {
   WorkspaceInfo,
   WorkspaceProjectSummary,
 } from "../types/project-types";
-
-const phaseLabels: Record<AgentPhase, string> = {
-  idle: "Idle",
-  planning: "Planning",
-  generating_assets: "Sprites",
-  generating_world: "World",
-  writing_code: "Code",
-  building: "Build",
-  ready: "Ready",
-  error: "Error",
-};
-
-const supportedStyles = ["2D", "HD2D", "3D"];
-const supportedEngines: GameEngine[] = ["babylonjs", "phaser"];
-const supportedGameTypes = Array.from(new Set(gameCreationTemplates.map((template) => template.type)));
-const randomGameIdeas = [
-  {
-    title: "Rainy Neon Courier",
-    prompt: "Create a neon city delivery game where a scooter courier dodges drones, upgrades routes, and uncovers a mystery package network.",
-  },
-  {
-    title: "Mushroom Kingdom Cafe",
-    prompt: "Create a cozy fantasy cafe builder where mushroom villagers request recipes, decorate rooms, and unlock forest festivals.",
-  },
-  {
-    title: "Clocktower Spell School",
-    prompt: "Create a magical academy RPG where students bend time in puzzle rooms, duel rivals, and repair a broken clocktower.",
-  },
-  {
-    title: "Sky Whale Rescue",
-    prompt: "Create an airborne exploration game where pilots rescue sky whales, gather storm crystals, and upgrade a floating base.",
-  },
-  {
-    title: "Dungeon Gardening Club",
-    prompt: "Create a dungeon gardening roguelike where players plant traps, grow monster allies, and survive adventurer waves.",
-  },
-  {
-    title: "Tiny Mech Postal Service",
-    prompt: "Create a miniature mech delivery game where players cross oversized kitchens, repair routes, and upgrade stamp-powered gadgets.",
-  },
-  {
-    title: "Ghost Museum Night Shift",
-    prompt: "Create a spooky comedy adventure where a night guard interviews ghosts, rearranges cursed exhibits, and solves old mysteries.",
-  },
-  {
-    title: "Solarpunk Train Village",
-    prompt: "Create a solarpunk life sim on a moving train where players grow gardens, befriend passengers, and choose new rail destinations.",
-  },
-  {
-    title: "Bubble Mage Aquarium",
-    prompt: "Create an underwater spellcasting puzzle game where a bubble mage redirects currents, rescues sea creatures, and restores coral gates.",
-  },
-  {
-    title: "Paper Dragon Tactics",
-    prompt: "Create a paper-craft tactics game where foldable dragons change shapes, capture wind shrines, and combo terrain effects.",
-  },
-  {
-    title: "Midnight Snack Heist",
-    prompt: "Create a stealth comedy game where tiny kitchen creatures steal snacks, avoid sleepy humans, and build a secret pantry base.",
-  },
-  {
-    title: "Crystal Radio Rangers",
-    prompt: "Create an exploration RPG where rangers tune crystal radios to reveal hidden paths, recruit signal spirits, and stop a static storm.",
-  },
-  {
-    title: "Cloud Orchard Keeper",
-    prompt: "Create a sky-farming game where players grow floating fruit trees, tame weather, and trade harvests with airship towns.",
-  },
-  {
-    title: "Robot Theater Troupe",
-    prompt: "Create a narrative management game where robot actors rehearse plays, improvise dialogue, and win over different audience factions.",
-  },
-  {
-    title: "Library of Living Maps",
-    prompt: "Create a mystery adventure where players explore animated maps, rewrite landmarks, and chase a cartographer who vanished between pages.",
-  },
-  {
-    title: "Frog Knight Tournament",
-    prompt: "Create a whimsical action RPG where frog knights joust on lily pads, collect pond relics, and defend a rainy kingdom.",
-  },
-  {
-    title: "Asteroid Bakery League",
-    prompt: "Create a resource-management game where bakers mine asteroid flour, dodge meteor storms, and compete in zero-gravity pastry contests.",
-  },
-  {
-    title: "Dream Elevator Bureau",
-    prompt: "Create a surreal puzzle adventure where players operate an elevator between dreams, resolve strange requests, and repair broken memories.",
-  },
-  {
-    title: "Lantern Bug Expedition",
-    prompt: "Create a tiny exploration game where glowing beetle scouts map a giant backyard, solve dew puzzles, and protect their lantern queen.",
-  },
-  {
-    title: "Volcano Spa Resort",
-    prompt: "Create a cozy management game where players run a spa on a sleepy volcano, calm lava spirits, and craft mineral treatments.",
-  },
-];
 
 export default function App() {
   const [view, setView] = useState<"home" | "workspace">("home");
@@ -1147,7 +1066,14 @@ function Workspace({
         onIterate={onIterate}
         onInterrupt={onInterrupt}
       />
-      <GamePreviewPanel project={project} previewProject={previewProject} previewableProjectIds={previewableProjectIds} phase={phase} onRebuildSource={onRebuildSource} />
+      <GamePreviewPanel
+        project={project}
+        previewProject={previewProject}
+        previewableProjectIds={previewableProjectIds}
+        phase={phase}
+        onRebuildSource={onRebuildSource}
+        logInteraction={logInteraction}
+      />
     </section>
   );
 }
@@ -1803,112 +1729,6 @@ function AgentProgress({
   );
 }
 
-function GamePreviewPanel({
-  project,
-  previewProject,
-  previewableProjectIds,
-  phase,
-  onRebuildSource,
-}: {
-  project: GameProjectManifest | null;
-  previewProject: GameProjectManifest | null;
-  previewableProjectIds: Set<string>;
-  phase: AgentPhase;
-  onRebuildSource: () => void;
-}) {
-  const isWorking = isCodexBusy(phase);
-  const currentProjectHasBuild = project ? previewableProjectIds.has(project.id) : false;
-  const previousProjectHasBuild = previewProject ? previewableProjectIds.has(previewProject.id) : false;
-  const effectivePreviewProject = previousProjectHasBuild ? previewProject : !isWorking && currentProjectHasBuild ? project : null;
-  const hasPreview = Boolean(effectivePreviewProject);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
-
-  useEffect(() => {
-    let cancelled = false;
-    setPreviewUrl("");
-
-    if (!effectivePreviewProject) return undefined;
-
-    window.gameSpark
-      ?.startPreviewServer?.(effectivePreviewProject.id)
-      .then((result) => {
-        if (!cancelled && result?.ok && result.url) {
-          setPreviewUrl(result.url);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt]);
-
-  const previewFrameUrl = previewUrl && effectivePreviewProject ? `${previewUrl}?t=${encodeURIComponent(effectivePreviewProject.updatedAt)}` : "";
-
-  return (
-    <section className="panel viewport-panel">
-      <div className="section-heading">
-        <h2>Game preview</h2>
-        <button
-          className="rebuild-source-button"
-          type="button"
-          disabled={!project || isWorking}
-          onClick={() => {
-            logInteraction("rebuild_source_clicked", { projectId: project?.id, projectTitle: project?.title });
-            onRebuildSource();
-          }}
-        >
-          Rebuild
-        </button>
-      </div>
-      <div className="viewport-stage">
-        {effectivePreviewProject && previewFrameUrl ? <iframe className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
-        {!effectivePreviewProject || !previewUrl ? (
-          <div className="preview-empty-state">
-            {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
-            <strong>{effectivePreviewProject ? "Starting preview server" : isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
-            <p>{effectivePreviewProject ? "Preparing a browser-openable localhost preview." : isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
-          </div>
-        ) : null}
-        <div className="viewport-hud">
-          <span>{previewStatus}</span>
-          <span>{isWorking && hasPreview ? "New version building" : "Game preview"}</span>
-        </div>
-      </div>
-      <div className="control-bar">
-        <button type="button" disabled={!hasPreview}>
-          Play
-        </button>
-        <button
-          className="secondary-button"
-          type="button"
-          disabled={!hasPreview}
-          onClick={() => {
-            if (!previewUrl) return;
-            logInteraction("preview_opened_in_window", { projectId: effectivePreviewProject?.id, projectTitle: effectivePreviewProject?.title });
-            window.gameSpark?.openPreviewWindow?.(previewUrl);
-          }}
-        >
-          Open in new window
-        </button>
-        <button
-          className="secondary-button"
-          type="button"
-          disabled={!hasPreview || !previewUrl}
-          onClick={() => {
-            if (!previewUrl) return;
-            logInteraction("preview_opened_in_browser", { projectId: effectivePreviewProject?.id, projectTitle: effectivePreviewProject?.title });
-            window.gameSpark?.openPreviewInBrowser?.(previewUrl);
-          }}
-        >
-          Open in browser
-        </button>
-      </div>
-    </section>
-  );
-}
-
 function AssetsViewer({
   assets,
   selectedAssetId,
@@ -2031,308 +1851,4 @@ function ProjectSnapshot({ project, workspace }: { project: GameProjectManifest 
       </dl>
     </section>
   );
-}
-
-function blockToPromptText(block: PromptBlock) {
-  if (block.type === "text") return block.content.trim();
-  return `Attached file: ${block.name} (${block.sizeLabel})`;
-}
-
-function normalizeManifest(manifest: GameProjectManifest): GameProjectManifest {
-  const now = new Date().toISOString();
-  const id = typeof manifest.id === "string" ? manifest.id : slugifyTitle(manifest.title || "local-game");
-  const title = typeof manifest.title === "string" ? manifest.title : id;
-  const promptHistory = Array.isArray(manifest.promptHistory)
-    ? manifest.promptHistory.map((prompt, index) => {
-        const record = prompt as unknown as Record<string, unknown>;
-        return {
-          id: typeof record.id === "string" ? record.id : `prompt-${index + 1}`,
-          content: typeof record.content === "string" ? record.content : typeof record.prompt === "string" ? record.prompt : "",
-          createdAt: typeof record.createdAt === "string" ? record.createdAt : typeof record.timestamp === "string" ? record.timestamp : now,
-        };
-      })
-    : [];
-  const runHistory = Array.isArray(manifest.runHistory)
-    ? manifest.runHistory.map((run, index) => {
-        const record = run as unknown as Record<string, unknown>;
-        const status = typeof record.status === "string" && record.status in phaseLabels ? (record.status as AgentPhase) : "ready";
-        return {
-          id: typeof record.id === "string" ? record.id : `run-${index + 1}`,
-          createdAt: typeof record.createdAt === "string" ? record.createdAt : typeof record.timestamp === "string" ? record.timestamp : now,
-          status,
-          summary: typeof record.summary === "string" ? record.summary : typeof record.mode === "string" ? `${record.mode} run` : "Local game run.",
-        };
-      })
-    : [];
-  const assets = Array.isArray(manifest.assets)
-    ? manifest.assets.map((asset, index) => {
-        const record = asset as unknown as Record<string, unknown>;
-        const kind = typeof record.kind === "string" && ["sprite", "model", "texture", "script", "scene"].includes(record.kind) ? record.kind : "texture";
-        const source = typeof record.source === "string" && ["generated", "imported", "system"].includes(record.source) ? record.source : "generated";
-        return {
-          id: typeof record.id === "string" ? record.id : `asset-${index + 1}`,
-          name: typeof record.name === "string" ? record.name : `Asset ${index + 1}`,
-          kind: kind as GameProjectAsset["kind"],
-          path: typeof record.path === "string" ? record.path : "",
-          source: source as GameProjectAsset["source"],
-          previewColor: typeof record.previewColor === "string" ? record.previewColor : "#d7c66a",
-          usage: typeof record.usage === "string" ? record.usage : "Project asset",
-          metadata: record.metadata && typeof record.metadata === "object" ? (record.metadata as GameProjectAsset["metadata"]) : undefined,
-        };
-      })
-    : [];
-  const engine: GameEngine = manifest.engine === "phaser" ? "phaser" : "babylonjs";
-  const runtimeEntry =
-    typeof manifest.runtimeEntry === "string"
-      ? manifest.runtimeEntry
-      : typeof manifest.playCanvasEntry === "string"
-        ? manifest.playCanvasEntry
-        : "src/main.js";
-  const defaultEditor = createDefaultEditorState();
-  const manifestRecord = manifest as unknown as Record<string, unknown>;
-  const editorRecord = manifestRecord.editor && typeof manifestRecord.editor === "object" ? (manifestRecord.editor as Record<string, unknown>) : {};
-  const editorTools = Array.isArray(editorRecord.tools)
-    ? defaultEditor.tools.map((defaultTool) => {
-        const savedTool = (editorRecord.tools as unknown[]).find((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === defaultTool.id) as
-          | Record<string, unknown>
-          | undefined;
-        return {
-          ...defaultTool,
-          status:
-            savedTool?.status === "empty" || savedTool?.status === "ready" || savedTool?.status === "needs-generation"
-              ? savedTool.status
-              : defaultTool.status,
-          summary: typeof savedTool?.summary === "string" ? savedTool.summary : defaultTool.summary,
-          assetRefs: Array.isArray(savedTool?.assetRefs) ? savedTool.assetRefs.filter((item): item is string => typeof item === "string") : defaultTool.assetRefs,
-        };
-      })
-    : defaultEditor.tools;
-  const editor: GameProjectManifest["editor"] = {
-    applyMode: editorRecord.applyMode === "auto" ? "auto" : "preview",
-    activeTool: defaultEditor.tools.some((tool) => tool.id === editorRecord.activeTool) ? (editorRecord.activeTool as EditorToolId) : defaultEditor.activeTool,
-    tools: editorTools,
-  };
-  const graphRecord = manifestRecord.logicGraph && typeof manifestRecord.logicGraph === "object" ? (manifestRecord.logicGraph as Record<string, unknown>) : {};
-  const defaultGraph = createDefaultLogicGraph(now);
-  const logicGraph = {
-    source: graphRecord.source === "ai-proposed" ? "ai-proposed" : "code-derived",
-    updatedAt: typeof graphRecord.updatedAt === "string" ? graphRecord.updatedAt : defaultGraph.updatedAt,
-    nodes: Array.isArray(graphRecord.nodes) && graphRecord.nodes.length ? graphRecord.nodes : defaultGraph.nodes,
-    edges: Array.isArray(graphRecord.edges) && graphRecord.edges.length ? graphRecord.edges : defaultGraph.edges,
-  } as GameProjectManifest["logicGraph"];
-
-  return {
-    id,
-    title,
-    style: typeof manifest.style === "string" && ["2D", "HD2D", "3D", "image-blaster", "babylonjs"].includes(manifest.style) ? manifest.style : "babylonjs",
-    engine,
-    editor,
-    logicGraph,
-    createdAt: typeof manifest.createdAt === "string" ? manifest.createdAt : now,
-    updatedAt: typeof manifest.updatedAt === "string" ? manifest.updatedAt : now,
-    workspacePath: typeof manifest.workspacePath === "string" ? manifest.workspacePath : id,
-    runtimeEntry,
-    babylonEntry: typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : engine === "babylonjs" ? runtimeEntry : undefined,
-    phaserEntry:
-      typeof manifest.phaserEntry === "string"
-        ? manifest.phaserEntry
-        : engine === "phaser"
-          ? runtimeEntry
-          : undefined,
-    playCanvasEntry: typeof manifest.playCanvasEntry === "string" ? manifest.playCanvasEntry : undefined,
-    buildPath: typeof manifest.buildPath === "string" ? manifest.buildPath : `${id}/build/index.html`,
-    publishedPath: typeof manifest.publishedPath === "string" ? manifest.publishedPath : undefined,
-    promptHistory,
-    runHistory,
-    assets,
-  };
-}
-
-function formatRelativeDate(value: string) {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "Unknown";
-  const diffMs = Date.now() - timestamp;
-  const dayMs = 24 * 60 * 60 * 1000;
-  if (diffMs < 60 * 1000) return "Just now";
-  if (diffMs < dayMs) return "Today";
-  if (diffMs < dayMs * 2) return "Yesterday";
-  if (diffMs < dayMs * 7) return "This week";
-  return new Date(timestamp).toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function slugifyTitle(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "local-game";
-}
-
-function findDuplicateProject(projectName: string, projects: WorkspaceProjectSummary[]) {
-  const requestedId = slugifyTitle(projectName);
-  const requestedTitle = projectName.trim().toLowerCase();
-  return projects.find((item) => item.id.toLowerCase() === requestedId || item.title.trim().toLowerCase() === requestedTitle);
-}
-
-function engineForTemplate(templateId: string, requestedEngine: GameEngine): GameEngine {
-  return templateSupportsPhaser(templateId) ? requestedEngine : "babylonjs";
-}
-
-function engineLabel(engine: GameEngine) {
-  return engine === "phaser" ? "Phaser" : "Babylon.js";
-}
-
-function formatCodexLogForDisplay(text: string) {
-  const parsed = parseJsonObject(text);
-  if (!parsed) return { title: "Codex log", detail: text };
-
-  if (parsed.type === "thread.started") {
-    return { title: "Codex started", detail: typeof parsed.thread_id === "string" ? `Thread ${parsed.thread_id}` : "Thread started." };
-  }
-
-  if (parsed.type === "turn.started") {
-    return { title: "Codex started", detail: "Started a new agent turn." };
-  }
-
-  if (parsed.type === "item.started" || parsed.type === "item.completed") {
-    return formatCodexItemEvent(parsed);
-  }
-
-  if (typeof parsed.message === "string") {
-    return { title: readableTitle(parsed.type, "Codex message"), detail: parsed.message };
-  }
-
-  return { title: readableTitle(parsed.type, "Codex event"), detail: summarizeObject(parsed) };
-}
-
-function parseJsonObject(text: string): Record<string, unknown> | null {
-  if (!text.startsWith("{")) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-function formatCodexItemEvent(event: Record<string, unknown>) {
-  const item = event.item && typeof event.item === "object" ? (event.item as Record<string, unknown>) : {};
-  const itemType = typeof item.type === "string" ? item.type : "item";
-  const status = typeof item.status === "string" ? item.status : event.type === "item.started" ? "started" : "completed";
-  const title = readableTitle(itemType, "Codex item");
-
-  if (itemType === "command_execution") {
-    const lines = [`Command ${status}`];
-    if (typeof item.command === "string") lines.push(shortenCommand(item.command));
-    if (typeof item.exit_code === "number") lines.push(`Exit code: ${item.exit_code}`);
-    if (typeof item.aggregated_output === "string" && item.aggregated_output.trim()) {
-      lines.push(cleanCommandOutput(item.aggregated_output));
-    }
-    return { title, detail: lines.join("\n") };
-  }
-
-  if (itemType === "file_change") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
-    const details = changes
-      .map((change) => {
-        if (!change || typeof change !== "object") return "";
-        const record = change as Record<string, unknown>;
-        const kind = typeof record.kind === "string" ? record.kind : "change";
-        const pathValue = typeof record.path === "string" ? record.path : "";
-        return `${kind}: ${pathValue}`;
-      })
-      .filter(Boolean);
-    return { title, detail: [`File changes ${status}`, ...details].join("\n") };
-  }
-
-  return { title, detail: summarizeObject(item) };
-}
-
-function readableTitle(value: unknown, fallback: string) {
-  if (typeof value !== "string" || !value.trim()) return fallback;
-  return value.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function shortenCommand(command: string) {
-  return command.replace(/^"[^"]*pwsh\.exe"\s+-Command\s+/i, "").replace(/^powershell(?:\.exe)?\s+-Command\s+/i, "");
-}
-
-function cleanCommandOutput(output: string) {
-  return output.replace(/\u001b\[[0-9;]*m/g, "").replace(/\r\n/g, "\n").trim();
-}
-
-function summarizeObject(value: Record<string, unknown>) {
-  return Object.entries(value)
-    .map(([key, item]) => {
-      if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") return `${key}: ${item}`;
-      return `${key}: ${Array.isArray(item) ? `${item.length} items` : "object"}`;
-    })
-    .join("\n");
-}
-
-function classifyWorkflowIntent(prompt: string, mode: CodexRunRequest["mode"]): CodexRunRequest["workflowIntent"] {
-  if (mode === "create") return "game_update";
-
-  const text = prompt.toLowerCase();
-  const updateVerbs = [
-    "create",
-    "build",
-    "generate",
-    "make",
-    "add",
-    "update",
-    "change",
-    "modify",
-    "remove",
-    "delete",
-    "fix",
-    "implement",
-    "regenerate",
-    "publish",
-    "export",
-    "replace",
-    "tune",
-    "balance",
-    "increase",
-    "decrease",
-  ];
-  const gameTargets = [
-    "game",
-    "level",
-    "scene",
-    "asset",
-    "sprite",
-    "character",
-    "npc",
-    "model",
-    "world",
-    "map",
-    "mechanic",
-    "script",
-    "image-blaster",
-    "camera",
-    "lighting",
-    "control",
-  ];
-
-  const hasUpdateVerb = updateVerbs.some((verb) => text.includes(verb));
-  const hasGameTarget = gameTargets.some((target) => text.includes(target));
-  return hasUpdateVerb && hasGameTarget ? "game_update" : "conversation";
-}
-
-function isCodexBusy(phase: AgentPhase) {
-  return phase === "planning" || phase === "generating_assets" || phase === "generating_world" || phase === "writing_code" || phase === "building";
-}
-
-function isValidEnvName(value: string) {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
-}
-
-function titleFromPrompt(prompt: string) {
-  const firstWords = prompt.split(/\s+/).slice(0, 4).join(" ");
-  return firstWords || "New image-blaster game";
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

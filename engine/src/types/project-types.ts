@@ -14,6 +14,8 @@ export type AssetSource = "generated" | "imported" | "system";
 export type Hd2dStyle = "2D" | "HD2D" | "3D" | "image-blaster" | "babylonjs";
 export type GameEngine = "babylonjs" | "phaser";
 export type ApplyMode = "preview" | "auto";
+export type PreviewMode = "edit" | "play";
+export type PlayStartMode = "fresh" | "current";
 export type EditorToolId = "character-2d" | "character-3d" | "world" | "logic" | "ui-dialogue" | "audio" | "publish";
 
 export type LogicGraphNodeKind = "trigger" | "condition" | "action" | "state" | "dialogue" | "ending";
@@ -52,8 +54,39 @@ export type EditorToolState = {
 
 export type ProjectEditorState = {
   applyMode: ApplyMode;
+  previewMode: PreviewMode;
+  playStartMode: PlayStartMode;
+  activeScenePath: string;
   activeTool: EditorToolId;
   tools: EditorToolState[];
+};
+
+export type SceneObject = {
+  id: string;
+  name: string;
+  kind: "sprite" | "model" | "trigger" | "camera" | "light" | "zone" | "prop";
+  assetRef?: string;
+  editable: boolean;
+  tags: string[];
+  transform: {
+    x: number;
+    y: number;
+    z: number;
+    rotationX: number;
+    rotationY: number;
+    rotationZ: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+  };
+};
+
+export type SceneFile = {
+  schemaVersion: 1;
+  id: string;
+  engine: GameEngine;
+  updatedAt: string;
+  objects: SceneObject[];
 };
 
 export type GameProjectAsset = {
@@ -173,6 +206,13 @@ export type GameSparkBridge = {
   openPreviewInBrowser?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   startPreviewServer?: (projectId: string) => Promise<{ ok: boolean; url?: string; port?: number; error?: string }>;
   rebuildPreview?: (projectId: string) => Promise<{ ok: boolean; manifest?: GameProjectManifest; previewUrl?: string; error?: string }>;
+  readSceneFile?: (projectId: string, scenePath?: string) => Promise<{ ok: boolean; scene?: SceneFile; path?: string; error?: string }>;
+  updateSceneObject?: (
+    projectId: string,
+    scenePath: string | undefined,
+    objectId: string,
+    transform: Partial<SceneObject["transform"]>,
+  ) => Promise<{ ok: boolean; scene?: SceneFile; error?: string }>;
   minimizeWindow?: () => Promise<void>;
   toggleMaximizeWindow?: () => Promise<boolean>;
   closeWindow?: () => Promise<void>;

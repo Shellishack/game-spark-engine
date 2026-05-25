@@ -60,7 +60,10 @@ Game Spark AI is a chat-led game engine. Traditional editor surfaces are control
 - Generated code is canonical.
 - Visual tools, including the logic node graph, are editable projections that produce structured chat/change requests.
 - Maintain `manifest.editor` with `applyMode`, `activeTool`, and tool states for `character-2d`, `character-3d`, `world`, `logic`, `ui-dialogue`, `audio`, and `publish`.
+- Maintain `manifest.editor.previewMode`, `playStartMode`, and `activeScenePath`. Default `activeScenePath` is `assets/scenes/main.scene.json`.
 - Maintain `manifest.logicGraph` as a code-derived node graph with nodes for triggers, conditions, actions, state, dialogue, and endings.
+- Scene layout and object transforms are authored in `assets/scenes/main.scene.json`. Generated game code must load this file so Edit mode changes appear in Play mode.
+- Edit mode supports object selection and transform edits. Play mode is actual gameplay and must not expose editing controls.
 - When graph edits are requested, update source code first, then refresh `logicGraph` metadata from the resulting code.
 - In `preview` apply mode, propose changes and validation expectations before applying files. In `auto` apply mode, apply changes, validate, and report changed files.
 
@@ -159,6 +162,9 @@ When the user starts a request to generate a new game, run this sequence:
   "phaserEntry": null,
   "editor": {
     "applyMode": "preview",
+    "previewMode": "edit",
+    "playStartMode": "fresh",
+    "activeScenePath": "assets/scenes/main.scene.json",
     "activeTool": "logic",
     "tools": []
   },

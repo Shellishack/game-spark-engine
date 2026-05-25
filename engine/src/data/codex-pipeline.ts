@@ -65,6 +65,8 @@ export const codexSystemPrompt = [
   "For Babylon.js games, load generated scene/model assets into a Babylon.js Engine and Scene. For Phaser games, build a Phaser.Game config and Phaser.Scene classes. Add UI and story/gameplay systems appropriate to the selected engine.",
   "The editor is chat-led. Respect editor.applyMode: preview means propose file/asset changes before applying; auto means apply changes and validate immediately.",
   "Generated game code is canonical. logicGraph is an editable visual projection of code. When a user changes graph nodes or edges, treat it as a structured change request, update source code, and refresh logicGraph metadata from the new code.",
+  "Scene layout and object transforms must be data-driven through assets/scenes/main.scene.json. Generated game code must load that scene file so Edit mode changes appear in Play mode.",
+  "Edit mode writes scene object transforms directly to main.scene.json. Play mode is the actual game runtime and must not expose editing controls.",
   "Record all generated assets in manifest.json with source, usage, paths, and prompt provenance.",
   "Save every run under runs/<timestamp>/ with the user prompt, agent log, changed files summary, and generated asset manifest.",
 ].join("\n");
@@ -117,6 +119,9 @@ export function createManifest(title: string, engine: GameEngine = "babylonjs"):
 export function createDefaultEditorState(): ProjectEditorState {
   return {
     applyMode: "preview",
+    previewMode: "edit",
+    playStartMode: "fresh",
+    activeScenePath: "assets/scenes/main.scene.json",
     activeTool: "logic",
     tools: [
       toolState("character-2d", "2D Character", "needs-generation", "Chat-generated sprite sheets with emotion animation preview.", ["asset-lantern-idle"]),

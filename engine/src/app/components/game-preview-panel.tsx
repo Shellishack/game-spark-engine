@@ -1,0 +1,231 @@
+import { useEffect, useState } from "react";
+import type { AgentPhase, GameProjectManifest, PlayStartMode, SceneFile, SceneObject } from "../../types/project-types";
+import { isCodexBusy } from "../app-utils";
+
+type GamePreviewPanelProps = {
+  project: GameProjectManifest | null;
+  previewProject: GameProjectManifest | null;
+  previewableProjectIds: Set<string>;
+  phase: AgentPhase;
+  onRebuildSource: () => void;
+  logInteraction: (type: string, payload?: Record<string, unknown>) => void;
+};
+
+export function GamePreviewPanel({
+  project,
+  previewProject,
+  previewableProjectIds,
+  phase,
+  onRebuildSource,
+  logInteraction,
+}: GamePreviewPanelProps) {
+  const isWorking = isCodexBusy(phase);
+  const currentProjectHasBuild = project ? previewableProjectIds.has(project.id) : false;
+  const previousProjectHasBuild = previewProject ? previewableProjectIds.has(previewProject.id) : false;
+  const effectivePreviewProject = previousProjectHasBuild ? previewProject : !isWorking && currentProjectHasBuild ? project : null;
+  const hasPreview = Boolean(effectivePreviewProject);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewMode, setPreviewMode] = useState<"edit" | "play">("edit");
+  const [playStartMode, setPlayStartMode] = useState<PlayStartMode>("fresh");
+  const [scene, setScene] = useState<SceneFile | null>(null);
+  const [selectedSceneObjectId, setSelectedSceneObjectId] = useState("");
+  const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewUrl("");
+
+    if (!effectivePreviewProject) return undefined;
+
+    window.gameSpark
+      ?.startPreviewServer?.(effectivePreviewProject.id)
+      .then((result) => {
+        if (!cancelled && result?.ok && result.url) {
+          setPreviewUrl(result.url);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setScene(null);
+    setSelectedSceneObjectId("");
+
+    if (!effectivePreviewProject) return undefined;
+
+    window.gameSpark
+      ?.readSceneFile?.(effectivePreviewProject.id, effectivePreviewProject.editor.activeScenePath)
+      .then((result) => {
+        if (!cancelled && result?.ok && result.scene) {
+          setScene(result.scene);
+          setSelectedSceneObjectId(result.scene.objects.find((object) => object.editable)?.id ?? "");
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt, effectivePreviewProject?.editor.activeScenePath]);
+
+  const previewFrameUrl =
+    previewUrl && effectivePreviewProject
+      ? `${previewUrl}?t=${encodeURIComponent(effectivePreviewProject.updatedAt)}&mode=${previewMode}&start=${playStartMode}`
+      : "";
+
+  function startPlay(nextStartMode: PlayStartMode) {
+    setPlayStartMode(nextStartMode);
+    setPreviewMode("play");
+    logInteraction("preview_play_started", { projectId: effectivePreviewProject?.id, startMode: nextStartMode });
+  }
+
+  function stopPlay() {
+    setPreviewMode("edit");
+    logInteraction("preview_edit_mode_started", { projectId: effectivePreviewProject?.id });
+  }
+
+  async function moveSceneObject(object: SceneObject, nextX: number, nextY: number) {
+    if (!effectivePreviewProject) return;
+    const transform = {
+      ...object.transform,
+      x: Math.max(0, Math.min(100, nextX)),
+      y: Math.max(0, Math.min(100, nextY)),
+    };
+    setSelectedSceneObjectId(object.id);
+    setScene((current) =>
+      current
+        ? {
+            ...current,
+            objects: current.objects.map((item) => (item.id === object.id ? { ...item, transform } : item)),
+          }
+        : current,
+    );
+    const result = await window.gameSpark?.updateSceneObject?.(effectivePreviewProject.id, effectivePreviewProject.editor.activeScenePath, object.id, transform);
+    if (result?.ok && result.scene) setScene(result.scene);
+  }
+
+  return (
+    <section className="panel viewport-panel">
+      <div className="section-heading">
+        <h2>Game preview</h2>
+        <div className="preview-mode-tabs" aria-label="Preview mode">
+          <button className={previewMode === "edit" ? "active" : ""} type="button" disabled={!hasPreview} onClick={stopPlay}>
+            Edit
+          </button>
+          <button className={previewMode === "play" ? "active" : ""} type="button" disabled={!hasPreview} onClick={() => startPlay("fresh")}>
+            Play
+          </button>
+        </div>
+      </div>
+      <div className="viewport-stage">
+        {effectivePreviewProject && previewFrameUrl ? <iframe className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
+        {effectivePreviewProject && previewMode === "edit" && scene ? (
+          <SceneEditOverlay scene={scene} selectedObjectId={selectedSceneObjectId} onSelect={setSelectedSceneObjectId} onMove={moveSceneObject} />
+        ) : null}
+        {!effectivePreviewProject || !previewUrl ? (
+          <div className="preview-empty-state">
+            {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
+            <strong>{effectivePreviewProject ? "Starting preview server" : isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
+            <p>{effectivePreviewProject ? "Preparing a browser-openable localhost preview." : isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
+          </div>
+        ) : null}
+        <div className="viewport-hud">
+          <span>{previewMode === "edit" ? "Editing scene" : playStartMode === "fresh" ? "Playing from start" : "Playing from current"}</span>
+          <span>{previewStatus}</span>
+        </div>
+      </div>
+      <div className="control-bar">
+        <button type="button" disabled={!hasPreview} onClick={() => startPlay("fresh")}>
+          Play from start
+        </button>
+        <button className="secondary-button" type="button" disabled={!hasPreview} onClick={() => startPlay("current")}>
+          Play from current
+        </button>
+        <button className="secondary-button" type="button" disabled={!hasPreview || previewMode === "edit"} onClick={stopPlay}>
+          Stop
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={!project || isWorking}
+          onClick={() => {
+            logInteraction("rebuild_source_clicked", { projectId: project?.id, projectTitle: project?.title });
+            onRebuildSource();
+          }}
+        >
+          Rebuild
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={!hasPreview}
+          onClick={() => {
+            if (!previewUrl) return;
+            logInteraction("preview_opened_in_window", { projectId: effectivePreviewProject?.id, projectTitle: effectivePreviewProject?.title });
+            window.gameSpark?.openPreviewWindow?.(previewUrl);
+          }}
+        >
+          Open in new window
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={!hasPreview || !previewUrl}
+          onClick={() => {
+            if (!previewUrl) return;
+            logInteraction("preview_opened_in_browser", { projectId: effectivePreviewProject?.id, projectTitle: effectivePreviewProject?.title });
+            window.gameSpark?.openPreviewInBrowser?.(previewUrl);
+          }}
+        >
+          Open in browser
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SceneEditOverlay({
+  scene,
+  selectedObjectId,
+  onSelect,
+  onMove,
+}: {
+  scene: SceneFile;
+  selectedObjectId: string;
+  onSelect: (objectId: string) => void;
+  onMove: (object: SceneObject, x: number, y: number) => void;
+}) {
+  return (
+    <div className="scene-edit-overlay" aria-label="Scene edit overlay">
+      {scene.objects
+        .filter((object) => object.editable)
+        .map((object) => (
+          <button
+            className={`scene-object-handle ${object.id === selectedObjectId ? "selected" : ""}`}
+            key={object.id}
+            type="button"
+            style={{ left: `${object.transform.x}%`, top: `${object.transform.y}%` }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onSelect(object.id);
+            }}
+            onPointerMove={(event) => {
+              if (event.buttons !== 1) return;
+              const bounds = event.currentTarget.parentElement?.getBoundingClientRect();
+              if (!bounds) return;
+              const x = ((event.clientX - bounds.left) / bounds.width) * 100;
+              const y = ((event.clientY - bounds.top) / bounds.height) * 100;
+              onMove(object, x, y);
+            }}
+          >
+            <span>{object.name}</span>
+          </button>
+        ))}
+    </div>
+  );
+}

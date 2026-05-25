@@ -342,6 +342,161 @@ async function rebuildProjectPreview(_event, projectId) {
   }
 }
 
+async function readSceneFile(_event, projectId, scenePath) {
+  const resolved = await resolveProjectScenePath(projectId, scenePath);
+  if (!resolved.ok) return resolved;
+
+  try {
+    if (!(await fileExists(resolved.path))) {
+      const scene = defaultSceneFile(resolved.projectId);
+      await fs.mkdir(path.dirname(resolved.path), { recursive: true });
+      await fs.writeFile(resolved.path, JSON.stringify(scene, null, 2), "utf8");
+      return { ok: true, scene, path: resolved.relativePath };
+    }
+
+    const scene = normalizeSceneFile(JSON.parse(await fs.readFile(resolved.path, "utf8")), resolved.projectId);
+    return { ok: true, scene, path: resolved.relativePath };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function updateSceneObject(_event, projectId, scenePath, objectId, transform = {}) {
+  const resolved = await resolveProjectScenePath(projectId, scenePath);
+  if (!resolved.ok) return resolved;
+
+  try {
+    const baseScene = (await fileExists(resolved.path))
+      ? normalizeSceneFile(JSON.parse(await fs.readFile(resolved.path, "utf8")), resolved.projectId)
+      : defaultSceneFile(resolved.projectId);
+    const now = new Date().toISOString();
+    const scene = {
+      ...baseScene,
+      updatedAt: now,
+      objects: baseScene.objects.map((object) =>
+        object.id === objectId && object.editable
+          ? {
+              ...object,
+              transform: {
+                ...object.transform,
+                ...numericTransformPatch(transform),
+              },
+            }
+          : object,
+      ),
+    };
+
+    await fs.mkdir(path.dirname(resolved.path), { recursive: true });
+    await fs.writeFile(resolved.path, JSON.stringify(scene, null, 2), "utf8");
+    return { ok: true, scene };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function resolveProjectScenePath(projectId, scenePath) {
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    return { ok: false, error: "Missing project id." };
+  }
+  const safeProjectId = sanitizeFilePart(projectId, "");
+  if (!safeProjectId || safeProjectId !== projectId) {
+    return { ok: false, error: "Invalid project id." };
+  }
+
+  const relativePath = typeof scenePath === "string" && scenePath.trim() ? scenePath.replace(/\\/g, "/") : "assets/scenes/main.scene.json";
+  if (relativePath.startsWith("/") || relativePath.includes("..")) {
+    return { ok: false, error: "Invalid scene path." };
+  }
+
+  const root = await workspaceRoot();
+  const projectRoot = path.resolve(root, safeProjectId);
+  const filePath = path.resolve(projectRoot, relativePath);
+  if (!filePath.startsWith(projectRoot + path.sep)) {
+    return { ok: false, error: "Invalid scene path." };
+  }
+
+  return { ok: true, projectId: safeProjectId, path: filePath, relativePath };
+}
+
+function defaultSceneFile(projectId) {
+  return normalizeSceneFile(
+    {
+      schemaVersion: 1,
+      id: `${projectId}-main-scene`,
+      engine: "babylonjs",
+      updatedAt: new Date().toISOString(),
+      objects: [
+        {
+          id: "hero-start",
+          name: "Hero start",
+          kind: "sprite",
+          editable: true,
+          tags: ["player", "spawn"],
+          transform: { x: 38, y: 58, z: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 },
+        },
+        {
+          id: "story-objective",
+          name: "Objective",
+          kind: "prop",
+          editable: true,
+          tags: ["objective"],
+          transform: { x: 66, y: 34, z: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 },
+        },
+      ],
+    },
+    projectId,
+  );
+}
+
+function normalizeSceneFile(scene, projectId) {
+  const now = new Date().toISOString();
+  const objects = Array.isArray(scene?.objects) ? scene.objects : [];
+  return {
+    schemaVersion: 1,
+    id: typeof scene?.id === "string" ? scene.id : `${projectId}-main-scene`,
+    engine: scene?.engine === "phaser" ? "phaser" : "babylonjs",
+    updatedAt: typeof scene?.updatedAt === "string" ? scene.updatedAt : now,
+    objects: objects.map(normalizeSceneObject),
+  };
+}
+
+function normalizeSceneObject(object, index) {
+  const transform = object?.transform && typeof object.transform === "object" ? object.transform : {};
+  return {
+    id: typeof object?.id === "string" ? object.id : `scene-object-${index + 1}`,
+    name: typeof object?.name === "string" ? object.name : `Scene object ${index + 1}`,
+    kind: ["sprite", "model", "trigger", "camera", "light", "zone", "prop"].includes(object?.kind) ? object.kind : "prop",
+    assetRef: typeof object?.assetRef === "string" ? object.assetRef : undefined,
+    editable: object?.editable !== false,
+    tags: Array.isArray(object?.tags) ? object.tags.filter((tag) => typeof tag === "string") : [],
+    transform: {
+      x: finiteNumber(transform.x, 50),
+      y: finiteNumber(transform.y, 50),
+      z: finiteNumber(transform.z, 0),
+      rotationX: finiteNumber(transform.rotationX, 0),
+      rotationY: finiteNumber(transform.rotationY, 0),
+      rotationZ: finiteNumber(transform.rotationZ, 0),
+      scaleX: finiteNumber(transform.scaleX, 1),
+      scaleY: finiteNumber(transform.scaleY, 1),
+      scaleZ: finiteNumber(transform.scaleZ, 1),
+    },
+  };
+}
+
+function numericTransformPatch(transform) {
+  const allowed = ["x", "y", "z", "rotationX", "rotationY", "rotationZ", "scaleX", "scaleY", "scaleZ"];
+  return Object.fromEntries(
+    allowed
+      .filter((key) => Number.isFinite(Number(transform?.[key])))
+      .map((key) => [key, Number(transform[key])]),
+  );
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 async function stopPreviewServer(projectId) {
   const existing = previewServers.get(projectId);
   if (!existing) return;
@@ -743,6 +898,9 @@ function normalizeEditorState(editor = {}) {
   const savedTools = Array.isArray(record.tools) ? record.tools : [];
   return {
     applyMode: record.applyMode === "auto" ? "auto" : "preview",
+    previewMode: record.previewMode === "play" ? "play" : "edit",
+    playStartMode: record.playStartMode === "current" ? "current" : "fresh",
+    activeScenePath: typeof record.activeScenePath === "string" ? record.activeScenePath : "assets/scenes/main.scene.json",
     activeTool: defaults.tools.some((tool) => tool.id === record.activeTool) ? record.activeTool : defaults.activeTool,
     tools: defaults.tools.map((tool) => {
       const saved = savedTools.find((item) => item && typeof item === "object" && item.id === tool.id) || {};
@@ -759,6 +917,9 @@ function normalizeEditorState(editor = {}) {
 function defaultEditorState() {
   return {
     applyMode: "preview",
+    previewMode: "edit",
+    playStartMode: "fresh",
+    activeScenePath: "assets/scenes/main.scene.json",
     activeTool: "logic",
     tools: [
       { id: "character-2d", title: "2D Character", status: "needs-generation", summary: "Chat-generated sprite sheets with emotion animation preview.", assetRefs: [] },
@@ -858,7 +1019,9 @@ async function createCodexPrompt(request) {
     "For Babylon.js 3D/HD2D generation, before running image-blaster, use OpenAI Image 2 to generate a clean background/environment reference image from the user's prompt, save it under assets/scenes or assets/textures, and pass that image to image-blaster as its required reference input. The reference image must not include the final character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text.",
     "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
     "Maintain manifest.editor with applyMode, activeTool, and tool summaries for character-2d, character-3d, world, logic, ui-dialogue, audio, and publish.",
+    "Maintain manifest.editor.previewMode, playStartMode, and activeScenePath. Default activeScenePath is assets/scenes/main.scene.json.",
     "Maintain manifest.logicGraph as a visual projection of canonical source code. Code is authoritative; graph edits are structured requests that must result in code changes plus refreshed graph metadata.",
+    "Scene layout and object transforms are authored in assets/scenes/main.scene.json. Generated game code must load this scene JSON so edits made in Edit mode are reflected when the user starts Play mode.",
     "If applyMode is preview, describe proposed file and asset changes before applying them. If applyMode is auto, apply the change, validate, and report what changed.",
     "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",
     "When ENGINE is babylonjs, load image-blaster generated scene/model assets into a Babylon.js Engine and Scene, then overlay the 2D character and bottom dialogue UI on top of that scene.",
@@ -1149,6 +1312,8 @@ ipcMain.handle("settings:update", updateAppSettings);
 ipcMain.handle("interaction:log", logInteraction);
 ipcMain.handle("preview:start-server", startPreviewServer);
 ipcMain.handle("preview:rebuild", rebuildProjectPreview);
+ipcMain.handle("scene:read", readSceneFile);
+ipcMain.handle("scene:update-object", updateSceneObject);
 ipcMain.handle("preview:open-window", openPreviewWindow);
 ipcMain.handle("preview:open-browser", openPreviewInBrowser);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

@@ -1940,6 +1940,31 @@ pre {
   box-shadow: 3px 4px 0 var(--line);
 }
 
+.preview-mode-tabs {
+  display: flex;
+  border: 3px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.preview-mode-tabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 0;
+  padding: 0.34rem 0.75rem;
+  background: transparent;
+  box-shadow: none;
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.preview-mode-tabs button.active {
+  background: var(--yellow);
+}
+
 .viewport-stage {
   position: relative;
   min-height: 0;
@@ -1969,6 +1994,48 @@ pre {
 .game-preview-frame {
   border: 0;
   background: #090d16;
+}
+
+.scene-edit-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.scene-object-handle {
+  position: absolute;
+  display: grid;
+  min-width: 74px;
+  min-height: 38px;
+  place-items: center;
+  border: 3px solid var(--line);
+  border-radius: 14px 10px 16px 12px;
+  padding: 0.28rem 0.45rem;
+  background: rgba(255, 241, 158, 0.9);
+  box-shadow: 3px 4px 0 var(--line);
+  color: var(--secondary);
+  cursor: grab;
+  font-size: 0.72rem;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  user-select: none;
+}
+
+.scene-object-handle:active {
+  cursor: grabbing;
+}
+
+.scene-object-handle.selected {
+  background: var(--green);
+  outline: 3px solid rgba(20, 184, 166, 0.35);
+}
+
+.scene-object-handle span {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-empty-state {
