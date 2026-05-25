@@ -53,6 +53,17 @@ Expected structure:
 
 Always maintain `manifest.json`. It is the UI contract.
 
+## AI Editor Contract
+
+Game Spark AI is a chat-led game engine. Traditional editor surfaces are control layers over AI-generated project code.
+
+- Generated code is canonical.
+- Visual tools, including the logic node graph, are editable projections that produce structured chat/change requests.
+- Maintain `manifest.editor` with `applyMode`, `activeTool`, and tool states for `character-2d`, `character-3d`, `world`, `logic`, `ui-dialogue`, `audio`, and `publish`.
+- Maintain `manifest.logicGraph` as a code-derived node graph with nodes for triggers, conditions, actions, state, dialogue, and endings.
+- When graph edits are requested, update source code first, then refresh `logicGraph` metadata from the resulting code.
+- In `preview` apply mode, propose changes and validation expectations before applying files. In `auto` apply mode, apply changes, validate, and report changed files.
+
 ## New Game Generation Workflow
 
 When the user starts a request to generate a new game, run this sequence:
@@ -146,6 +157,17 @@ When the user starts a request to generate a new game, run this sequence:
   "runtimeEntry": "src/main.js",
   "babylonEntry": "src/main.js",
   "phaserEntry": null,
+  "editor": {
+    "applyMode": "preview",
+    "activeTool": "logic",
+    "tools": []
+  },
+  "logicGraph": {
+    "source": "code-derived",
+    "updatedAt": "ISO timestamp",
+    "nodes": [],
+    "edges": []
+  },
   "buildPath": "project-slug/build/index.html",
   "promptHistory": [],
   "runHistory": [],

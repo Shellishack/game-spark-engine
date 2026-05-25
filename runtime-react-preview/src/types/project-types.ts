@@ -13,6 +13,48 @@ export type AssetSource = "generated" | "imported" | "system";
 
 export type Hd2dStyle = "2D" | "HD2D" | "3D" | "image-blaster" | "babylonjs";
 export type GameEngine = "babylonjs" | "phaser";
+export type ApplyMode = "preview" | "auto";
+export type EditorToolId = "character-2d" | "character-3d" | "world" | "logic" | "ui-dialogue" | "audio" | "publish";
+
+export type LogicGraphNodeKind = "trigger" | "condition" | "action" | "state" | "dialogue" | "ending";
+
+export type LogicGraphNode = {
+  id: string;
+  kind: LogicGraphNodeKind;
+  title: string;
+  summary: string;
+  codeRefs: string[];
+  x: number;
+  y: number;
+};
+
+export type LogicGraphEdge = {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+};
+
+export type LogicGraph = {
+  source: "code-derived" | "ai-proposed";
+  updatedAt: string;
+  nodes: LogicGraphNode[];
+  edges: LogicGraphEdge[];
+};
+
+export type EditorToolState = {
+  id: EditorToolId;
+  title: string;
+  status: "empty" | "ready" | "needs-generation";
+  summary: string;
+  assetRefs: string[];
+};
+
+export type ProjectEditorState = {
+  applyMode: ApplyMode;
+  activeTool: EditorToolId;
+  tools: EditorToolState[];
+};
 
 export type GameProjectAsset = {
   id: string;
@@ -42,6 +84,8 @@ export type GameProjectManifest = {
   title: string;
   style: Hd2dStyle;
   engine: GameEngine;
+  editor: ProjectEditorState;
+  logicGraph: LogicGraph;
   createdAt: string;
   updatedAt: string;
   workspacePath: string;

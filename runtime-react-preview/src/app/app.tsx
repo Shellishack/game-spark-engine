@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createManifest,
   createMockRunEvents,
+  createDefaultEditorState,
+  createDefaultLogicGraph,
   defaultPromptBlocks,
   publishedGames,
   spriteEmotions,
@@ -12,7 +14,9 @@ import type {
   AgentEvent,
   AgentPhase,
   AgentEnvVariable,
+  ApplyMode,
   CodexRunRequest,
+  EditorToolId,
   GameEngine,
   GameProjectAsset,
   GameProjectManifest,
@@ -126,6 +130,8 @@ export default function App() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [phase, setPhase] = useState<AgentPhase>("idle");
   const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [activeEditorTool, setActiveEditorTool] = useState<EditorToolId>("logic");
+  const [applyMode, setApplyMode] = useState<ApplyMode>("preview");
   const [newProjectName, setNewProjectName] = useState("Lantern Grove");
   const [projectNameError, setProjectNameError] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState(gameCreationTemplates[0]?.id ?? "");
@@ -207,6 +213,8 @@ export default function App() {
         setLastPreviewProject(summary?.hasBuild ? normalizedManifest : null);
       });
       setSelectedAssetId(normalizedManifest.assets[0]?.id ?? "");
+      setActiveEditorTool(normalizedManifest.editor.activeTool);
+      setApplyMode(normalizedManifest.editor.applyMode);
       setPhase("ready");
     });
 
@@ -281,6 +289,8 @@ export default function App() {
 
     setView("workspace");
     setProject(nextProject);
+    setActiveEditorTool(nextProject.editor.activeTool);
+    setApplyMode(nextProject.editor.applyMode);
     setLastPreviewProject(previewableProjectIds.has(nextProject.id) ? nextProject : null);
     setPhase(workflowIntent === "game_update" ? "planning" : "idle");
     setEvents([]);
@@ -296,6 +306,8 @@ export default function App() {
         });
         setPhase("ready");
         setSelectedAssetId(normalizedProject.assets[0]?.id ?? "");
+        setActiveEditorTool(normalizedProject.editor.activeTool);
+        setApplyMode(normalizedProject.editor.applyMode);
         return;
       }
       if (bridgeResult?.ok) {
@@ -375,6 +387,8 @@ export default function App() {
       setLastPreviewProject(summary?.hasBuild ? updatedProject : null);
     });
     setSelectedAssetId(updatedProject.assets[0]?.id ?? "");
+    setActiveEditorTool(updatedProject.editor.activeTool);
+    setApplyMode(updatedProject.editor.applyMode);
   }
 
   async function refreshWorkspaceProjects() {
@@ -393,6 +407,8 @@ export default function App() {
     setProject(nextProject);
     setLastPreviewProject(projectSummary.hasBuild ? nextProject : null);
     setSelectedAssetId(nextProject.assets[0]?.id ?? "");
+    setActiveEditorTool(nextProject.editor.activeTool);
+    setApplyMode(nextProject.editor.applyMode);
     setPhase("ready");
     setEvents([]);
     setView("workspace");
@@ -418,6 +434,53 @@ export default function App() {
         sizeLabel: "2.4 MB",
       },
     ]);
+  }
+
+  function selectEditorTool(toolId: EditorToolId) {
+    setActiveEditorTool(toolId);
+    setProject((current) =>
+      current
+        ? {
+            ...current,
+            editor: {
+              ...current.editor,
+              activeTool: toolId,
+            },
+          }
+        : current,
+    );
+    logInteraction("editor_tool_selected", { toolId, projectId: project?.id });
+  }
+
+  function changeApplyMode(nextMode: ApplyMode) {
+    setApplyMode(nextMode);
+    setProject((current) =>
+      current
+        ? {
+            ...current,
+            editor: {
+              ...current.editor,
+              applyMode: nextMode,
+            },
+          }
+        : current,
+    );
+    logInteraction("editor_apply_mode_changed", { applyMode: nextMode, projectId: project?.id });
+  }
+
+  function draftToolPrompt(toolId: EditorToolId, instruction: string) {
+    const tool = project?.editor.tools.find((item) => item.id === toolId);
+    updateDraft(
+      [
+        `[Editor tool: ${tool?.title ?? toolId}]`,
+        `[Apply mode: ${applyMode}]`,
+        instruction,
+        "",
+        "Use the selected editor tool context. Treat generated code as canonical, update manifest editor metadata, and refresh logicGraph if game logic changes.",
+      ].join("\n"),
+    );
+    selectEditorTool(toolId);
+    logInteraction("editor_tool_prompt_drafted", { toolId, applyMode, projectId: project?.id, instruction });
   }
 
   return (
@@ -470,6 +533,8 @@ export default function App() {
             workspace={workspace}
             agentEnv={agentEnv}
             settingsStatus={settingsStatus}
+            activeEditorTool={activeEditorTool}
+            applyMode={applyMode}
             onDraftChange={updateDraft}
             onAddAttachment={addMockAttachment}
             onSelectWorkspace={selectWorkspace}
@@ -481,6 +546,9 @@ export default function App() {
             onIterate={() => startRun("chat")}
             onRebuildSource={rebuildPreview}
             onInterrupt={interruptCodex}
+            onSelectEditorTool={selectEditorTool}
+            onApplyModeChange={changeApplyMode}
+            onToolPrompt={draftToolPrompt}
             onSelectAsset={(assetId) => {
               logInteraction("asset_selected", { assetId, projectId: project?.id });
               setSelectedAssetId(assetId);
@@ -616,6 +684,8 @@ export default function App() {
     setProject(normalizedProject);
     setLastPreviewProject(normalizedProject);
     setSelectedAssetId(normalizedProject.assets[0]?.id ?? "");
+    setActiveEditorTool(normalizedProject.editor.activeTool);
+    setApplyMode(normalizedProject.editor.applyMode);
     setPhase("ready");
     setEvents((current) => [
       ...current,
@@ -997,6 +1067,8 @@ function Workspace({
   workspace,
   agentEnv,
   settingsStatus,
+  activeEditorTool,
+  applyMode,
   onDraftChange,
   onAddAttachment,
   onSelectWorkspace,
@@ -1008,6 +1080,9 @@ function Workspace({
   onIterate,
   onRebuildSource,
   onInterrupt,
+  onSelectEditorTool,
+  onApplyModeChange,
+  onToolPrompt,
   onSelectAsset,
 }: {
   promptBlocks: PromptBlock[];
@@ -1021,6 +1096,8 @@ function Workspace({
   workspace: WorkspaceInfo;
   agentEnv: AgentEnvVariable[];
   settingsStatus: { kind: "idle" | "saved" | "error"; message: string };
+  activeEditorTool: EditorToolId;
+  applyMode: ApplyMode;
   onDraftChange: (content: string) => void;
   onAddAttachment: () => void;
   onSelectWorkspace: () => void;
@@ -1032,6 +1109,9 @@ function Workspace({
   onIterate: () => void;
   onRebuildSource: () => void;
   onInterrupt: () => void;
+  onSelectEditorTool: (toolId: EditorToolId) => void;
+  onApplyModeChange: (mode: ApplyMode) => void;
+  onToolPrompt: (toolId: EditorToolId, instruction: string) => void;
   onSelectAsset: (assetId: string) => void;
 }) {
   return (
@@ -1043,7 +1123,9 @@ function Workspace({
         selectedAssetId={selectedAssetId}
         agentEnv={agentEnv}
         settingsStatus={settingsStatus}
+        activeEditorTool={activeEditorTool}
         onSelectAsset={onSelectAsset}
+        onSelectEditorTool={onSelectEditorTool}
         onSelectWorkspace={onSelectWorkspace}
         onResetWorkspace={onResetWorkspace}
         onAddAgentEnv={onAddAgentEnv}
@@ -1056,6 +1138,10 @@ function Workspace({
         events={events}
         phase={phase}
         project={project}
+        activeEditorTool={activeEditorTool}
+        applyMode={applyMode}
+        onApplyModeChange={onApplyModeChange}
+        onToolPrompt={onToolPrompt}
         onDraftChange={onDraftChange}
         onAddAttachment={onAddAttachment}
         onIterate={onIterate}
@@ -1073,7 +1159,9 @@ function NavigationPanel({
   selectedAssetId,
   agentEnv,
   settingsStatus,
+  activeEditorTool,
   onSelectAsset,
+  onSelectEditorTool,
   onSelectWorkspace,
   onResetWorkspace,
   onAddAgentEnv,
@@ -1087,7 +1175,9 @@ function NavigationPanel({
   selectedAssetId: string;
   agentEnv: AgentEnvVariable[];
   settingsStatus: { kind: "idle" | "saved" | "error"; message: string };
+  activeEditorTool: EditorToolId;
   onSelectAsset: (assetId: string) => void;
+  onSelectEditorTool: (toolId: EditorToolId) => void;
   onSelectWorkspace: () => void;
   onResetWorkspace: () => void;
   onAddAgentEnv: () => void;
@@ -1095,7 +1185,7 @@ function NavigationPanel({
   onRemoveAgentEnv: (id: string) => void;
   onSaveAgentEnv: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"assets" | "settings">("assets");
+  const [activeTab, setActiveTab] = useState<"tools" | "assets" | "settings">("tools");
 
   return (
     <aside className="nav-panel">
@@ -1108,6 +1198,19 @@ function NavigationPanel({
 
       <div className="nav-scroll">
         <nav className="nav-section" aria-label="Project navigation">
+          <button
+            className={`nav-item ${activeTab === "tools" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              logInteraction("editor_nav_tab_clicked", { from: activeTab, to: "tools", projectId: project?.id });
+              setActiveTab("tools");
+            }}
+          >
+            <span className="nav-icon" aria-hidden="true">
+              AI
+            </span>
+            AI tools
+          </button>
           <button
             className={`nav-item ${activeTab === "assets" ? "active" : ""}`}
             type="button"
@@ -1137,6 +1240,7 @@ function NavigationPanel({
         </nav>
 
         <div className="nav-tab-content">
+          {activeTab === "tools" ? <EditorToolList project={project} activeTool={activeEditorTool} onSelectTool={onSelectEditorTool} /> : null}
           {activeTab === "assets" ? <AssetsViewer assets={assets} selectedAssetId={selectedAssetId} onSelectAsset={onSelectAsset} /> : null}
           {activeTab === "settings" ? (
             <>
@@ -1155,6 +1259,42 @@ function NavigationPanel({
         </div>
       </div>
     </aside>
+  );
+}
+
+function EditorToolList({
+  project,
+  activeTool,
+  onSelectTool,
+}: {
+  project: GameProjectManifest | null;
+  activeTool: EditorToolId;
+  onSelectTool: (toolId: EditorToolId) => void;
+}) {
+  const tools = project?.editor.tools ?? createDefaultEditorState().tools;
+  return (
+    <section className="editor-tool-list">
+      <div className="section-heading">
+        <h2>AI tools</h2>
+        <span>{tools.length}</span>
+      </div>
+      <div className="tool-list">
+        {tools.map((tool) => (
+          <button
+            className={`tool-row ${tool.id === activeTool ? "selected" : ""}`}
+            key={tool.id}
+            type="button"
+            onClick={() => onSelectTool(tool.id)}
+          >
+            <span className={`tool-status ${tool.status}`} />
+            <span>
+              <strong>{tool.title}</strong>
+              <small>{tool.summary}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1252,6 +1392,10 @@ function AgentChat({
   events,
   phase,
   project,
+  activeEditorTool,
+  applyMode,
+  onApplyModeChange,
+  onToolPrompt,
   onDraftChange,
   onAddAttachment,
   onIterate,
@@ -1261,6 +1405,10 @@ function AgentChat({
   events: AgentEvent[];
   phase: AgentPhase;
   project: GameProjectManifest | null;
+  activeEditorTool: EditorToolId;
+  applyMode: ApplyMode;
+  onApplyModeChange: (mode: ApplyMode) => void;
+  onToolPrompt: (toolId: EditorToolId, instruction: string) => void;
   onDraftChange: (content: string) => void;
   onAddAttachment: () => void;
   onIterate: () => void;
@@ -1289,6 +1437,14 @@ function AgentChat({
         </div>
       </header>
 
+      <EditorToolWorkspace
+        project={project}
+        activeTool={activeEditorTool}
+        applyMode={applyMode}
+        onApplyModeChange={onApplyModeChange}
+        onToolPrompt={onToolPrompt}
+      />
+
       <AgentProgress events={events} phase={phase} messagesRef={messagesRef} />
 
       <PromptComposer
@@ -1301,6 +1457,150 @@ function AgentChat({
       />
     </section>
   );
+}
+
+function EditorToolWorkspace({
+  project,
+  activeTool,
+  applyMode,
+  onApplyModeChange,
+  onToolPrompt,
+}: {
+  project: GameProjectManifest | null;
+  activeTool: EditorToolId;
+  applyMode: ApplyMode;
+  onApplyModeChange: (mode: ApplyMode) => void;
+  onToolPrompt: (toolId: EditorToolId, instruction: string) => void;
+}) {
+  const tool = project?.editor.tools.find((item) => item.id === activeTool) ?? createDefaultEditorState().tools.find((item) => item.id === activeTool);
+  const actions = toolActions(activeTool, project?.engine ?? "babylonjs");
+  return (
+    <section className="editor-workspace">
+      <div className="editor-workspace-head">
+        <div>
+          <p className="eyebrow">AI editor</p>
+          <h3>{tool?.title ?? "Tool"}</h3>
+        </div>
+        <div className="apply-toggle" aria-label="Apply mode">
+          {(["preview", "auto"] as ApplyMode[]).map((mode) => (
+            <button className={applyMode === mode ? "active" : ""} key={mode} type="button" onClick={() => onApplyModeChange(mode)}>
+              {mode}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="editor-tool-summary">{tool?.summary}</p>
+      {activeTool === "logic" ? <LogicGraphPreview graph={project?.logicGraph ?? createDefaultLogicGraph()} /> : <ToolPreview toolId={activeTool} engine={project?.engine ?? "babylonjs"} />}
+      <div className="tool-action-grid">
+        {actions.map((action) => (
+          <button key={action.label} type="button" onClick={() => onToolPrompt(activeTool, action.prompt)}>
+            <strong>{action.label}</strong>
+            <span>{action.detail}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LogicGraphPreview({ graph }: { graph: GameProjectManifest["logicGraph"] }) {
+  return (
+    <div className="logic-graph-preview">
+      <svg viewBox="0 0 680 300" role="img" aria-label="Game logic node graph">
+        {graph.edges.map((edge) => {
+          const from = graph.nodes.find((node) => node.id === edge.from);
+          const to = graph.nodes.find((node) => node.id === edge.to);
+          if (!from || !to) return null;
+          const x1 = from.x + 120;
+          const y1 = from.y + 34;
+          const x2 = to.x;
+          const y2 = to.y + 34;
+          return (
+            <g key={edge.id}>
+              <path d={`M ${x1} ${y1} C ${x1 + 48} ${y1}, ${x2 - 48} ${y2}, ${x2} ${y2}`} />
+              <text x={(x1 + x2) / 2 - 18} y={(y1 + y2) / 2 - 8}>
+                {edge.label}
+              </text>
+            </g>
+          );
+        })}
+        {graph.nodes.map((node) => (
+          <g className={`graph-node ${node.kind}`} key={node.id} transform={`translate(${node.x} ${node.y})`}>
+            <rect width="128" height="68" rx="8" />
+            <text x="12" y="24">
+              {node.title}
+            </text>
+            <text x="12" y="46">
+              {node.kind}
+            </text>
+          </g>
+        ))}
+      </svg>
+      <div className="logic-node-list">
+        {graph.nodes.map((node) => (
+          <article key={node.id}>
+            <strong>{node.title}</strong>
+            <span>{node.summary}</span>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolPreview({ toolId, engine }: { toolId: EditorToolId; engine: GameEngine }) {
+  const title: Record<EditorToolId, string> = {
+    "character-2d": "Sprite animation preview",
+    "character-3d": "3D character preview",
+    world: "Scene preview",
+    logic: "Logic preview",
+    "ui-dialogue": "Dialogue and HUD preview",
+    audio: "Audio event map",
+    publish: "Build readiness",
+  };
+  return (
+    <div className={`tool-preview tool-preview-${toolId}`}>
+      <div className="tool-preview-stage">
+        <span>{engineLabel(engine)}</span>
+        <strong>{title[toolId]}</strong>
+      </div>
+    </div>
+  );
+}
+
+function toolActions(toolId: EditorToolId, engine: GameEngine) {
+  const engineText = engine === "phaser" ? "Phaser" : "Babylon.js";
+  const actions: Record<EditorToolId, Array<{ label: string; detail: string; prompt: string }>> = {
+    "character-2d": [
+      { label: "Generate sheet", detail: "Create idle/surprised/happy/sad/laugh.", prompt: "Generate or update the 2D character sprite sheets and wire the animation states into the runtime." },
+      { label: "Tune motion", detail: "Adjust frame timing and emotion mapping.", prompt: "Tune the 2D character animation timing, emotion transitions, and runtime references." },
+    ],
+    "character-3d": [
+      { label: "Design model", detail: "Create a model direction for Babylon.js.", prompt: "Design or update the 3D character model plan, materials, scale, and Babylon.js preview usage." },
+      { label: "Pose preview", detail: "Add camera, light, and pose notes.", prompt: "Add a 3D character preview setup with camera, lighting, material notes, and runtime references." },
+    ],
+    world: [
+      { label: "Generate world", detail: `Create a ${engineText} scene plan.`, prompt: `Generate or update the ${engineText} world scene, camera, lighting, object placement, and asset references.` },
+      { label: "Add interactions", detail: "Objects, pickups, and inspect targets.", prompt: "Add interactable world objects and connect them to game state, dialogue, and feedback." },
+    ],
+    logic: [
+      { label: "Update graph", detail: "Use nodes as an edit request.", prompt: "Update the game logic code from the current node graph intent, then refresh logicGraph metadata from the resulting code." },
+      { label: "Add branch", detail: "Create a new trigger/action path.", prompt: "Add a new gameplay branch with trigger, condition, action, state update, and ending/dialogue impact." },
+    ],
+    "ui-dialogue": [
+      { label: "Write dialogue", detail: "Branching choices and HUD states.", prompt: "Write or revise the dialogue tree, choice UI, HUD prompts, and runtime state transitions." },
+      { label: "Polish UI", detail: "Improve layout and readability.", prompt: "Polish the in-game UI layout, dialogue panel, button states, and readable feedback." },
+    ],
+    audio: [
+      { label: "Sound map", detail: "Bind sounds to events.", prompt: "Create or update the audio event map for music, ambience, UI sounds, and gameplay feedback." },
+      { label: "Mix groups", detail: "Music, SFX, ambience.", prompt: "Add volume groups and audio playback hooks for music, sound effects, and ambience." },
+    ],
+    publish: [
+      { label: "Validate build", detail: "Check files and runtime references.", prompt: "Validate the playable build, asset references, manifest metadata, and preview readiness." },
+      { label: "Prepare export", detail: "Summarize publish state.", prompt: "Prepare the local publish/export state and document any blockers in the latest run validation." },
+    ],
+  };
+  return actions[toolId];
 }
 
 function WorkspacePicker({
@@ -1788,12 +2088,46 @@ function normalizeManifest(manifest: GameProjectManifest): GameProjectManifest {
       : typeof manifest.playCanvasEntry === "string"
         ? manifest.playCanvasEntry
         : "src/main.js";
+  const defaultEditor = createDefaultEditorState();
+  const manifestRecord = manifest as unknown as Record<string, unknown>;
+  const editorRecord = manifestRecord.editor && typeof manifestRecord.editor === "object" ? (manifestRecord.editor as Record<string, unknown>) : {};
+  const editorTools = Array.isArray(editorRecord.tools)
+    ? defaultEditor.tools.map((defaultTool) => {
+        const savedTool = (editorRecord.tools as unknown[]).find((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === defaultTool.id) as
+          | Record<string, unknown>
+          | undefined;
+        return {
+          ...defaultTool,
+          status:
+            savedTool?.status === "empty" || savedTool?.status === "ready" || savedTool?.status === "needs-generation"
+              ? savedTool.status
+              : defaultTool.status,
+          summary: typeof savedTool?.summary === "string" ? savedTool.summary : defaultTool.summary,
+          assetRefs: Array.isArray(savedTool?.assetRefs) ? savedTool.assetRefs.filter((item): item is string => typeof item === "string") : defaultTool.assetRefs,
+        };
+      })
+    : defaultEditor.tools;
+  const editor: GameProjectManifest["editor"] = {
+    applyMode: editorRecord.applyMode === "auto" ? "auto" : "preview",
+    activeTool: defaultEditor.tools.some((tool) => tool.id === editorRecord.activeTool) ? (editorRecord.activeTool as EditorToolId) : defaultEditor.activeTool,
+    tools: editorTools,
+  };
+  const graphRecord = manifestRecord.logicGraph && typeof manifestRecord.logicGraph === "object" ? (manifestRecord.logicGraph as Record<string, unknown>) : {};
+  const defaultGraph = createDefaultLogicGraph(now);
+  const logicGraph = {
+    source: graphRecord.source === "ai-proposed" ? "ai-proposed" : "code-derived",
+    updatedAt: typeof graphRecord.updatedAt === "string" ? graphRecord.updatedAt : defaultGraph.updatedAt,
+    nodes: Array.isArray(graphRecord.nodes) && graphRecord.nodes.length ? graphRecord.nodes : defaultGraph.nodes,
+    edges: Array.isArray(graphRecord.edges) && graphRecord.edges.length ? graphRecord.edges : defaultGraph.edges,
+  } as GameProjectManifest["logicGraph"];
 
   return {
     id,
     title,
     style: typeof manifest.style === "string" && ["2D", "HD2D", "3D", "image-blaster", "babylonjs"].includes(manifest.style) ? manifest.style : "babylonjs",
     engine,
+    editor,
+    logicGraph,
     createdAt: typeof manifest.createdAt === "string" ? manifest.createdAt : now,
     updatedAt: typeof manifest.updatedAt === "string" ? manifest.updatedAt : now,
     workspacePath: typeof manifest.workspacePath === "string" ? manifest.workspacePath : id,

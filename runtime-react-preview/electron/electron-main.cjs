@@ -473,6 +473,8 @@ async function touchManifestAfterRebuild(projectRoot) {
   manifest.runtimeEntry = typeof manifest.runtimeEntry === "string" ? manifest.runtimeEntry : manifest.playCanvasEntry || "src/main.js";
   manifest.babylonEntry = typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : manifest.engine === "babylonjs" ? manifest.runtimeEntry : undefined;
   manifest.phaserEntry = typeof manifest.phaserEntry === "string" ? manifest.phaserEntry : manifest.engine === "phaser" ? manifest.runtimeEntry : undefined;
+  manifest.editor = normalizeEditorState(manifest.editor);
+  manifest.logicGraph = normalizeLogicGraph(manifest.logicGraph, now);
   manifest.buildPath = `${manifest.id}/build/index.html`;
   manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
   manifest.runHistory = Array.isArray(manifest.runHistory) ? manifest.runHistory : [];
@@ -694,6 +696,8 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
       runtimeEntry: "src/main.js",
       babylonEntry: engine === "babylonjs" ? "src/main.js" : undefined,
       phaserEntry: engine === "phaser" ? "src/main.js" : undefined,
+      editor: normalizeEditorState(),
+      logicGraph: normalizeLogicGraph(null, now),
       buildPath: `${projectId}/build/index.html`,
       publishedPath: `published/${projectId}/index.html`,
       promptHistory: [promptEntry],
@@ -711,6 +715,8 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
     manifest.runtimeEntry = typeof manifest.runtimeEntry === "string" ? manifest.runtimeEntry : manifest.playCanvasEntry || "src/main.js";
     manifest.babylonEntry = typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : manifest.engine === "babylonjs" ? manifest.runtimeEntry : undefined;
     manifest.phaserEntry = typeof manifest.phaserEntry === "string" ? manifest.phaserEntry : manifest.engine === "phaser" ? manifest.runtimeEntry : undefined;
+    manifest.editor = normalizeEditorState(manifest.editor);
+    manifest.logicGraph = normalizeLogicGraph(manifest.logicGraph, now);
     manifest.buildPath = typeof manifest.buildPath === "string" ? manifest.buildPath : `${projectId}/build/index.html`;
     manifest.publishedPath = typeof manifest.publishedPath === "string" ? manifest.publishedPath : `published/${projectId}/index.html`;
     manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
@@ -729,6 +735,70 @@ function titleFromProjectId(projectId) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ") || "New Game";
+}
+
+function normalizeEditorState(editor = {}) {
+  const defaults = defaultEditorState();
+  const record = editor && typeof editor === "object" ? editor : {};
+  const savedTools = Array.isArray(record.tools) ? record.tools : [];
+  return {
+    applyMode: record.applyMode === "auto" ? "auto" : "preview",
+    activeTool: defaults.tools.some((tool) => tool.id === record.activeTool) ? record.activeTool : defaults.activeTool,
+    tools: defaults.tools.map((tool) => {
+      const saved = savedTools.find((item) => item && typeof item === "object" && item.id === tool.id) || {};
+      return {
+        ...tool,
+        status: ["empty", "ready", "needs-generation"].includes(saved.status) ? saved.status : tool.status,
+        summary: typeof saved.summary === "string" ? saved.summary : tool.summary,
+        assetRefs: Array.isArray(saved.assetRefs) ? saved.assetRefs.filter((item) => typeof item === "string") : tool.assetRefs,
+      };
+    }),
+  };
+}
+
+function defaultEditorState() {
+  return {
+    applyMode: "preview",
+    activeTool: "logic",
+    tools: [
+      { id: "character-2d", title: "2D Character", status: "needs-generation", summary: "Chat-generated sprite sheets with emotion animation preview.", assetRefs: [] },
+      { id: "character-3d", title: "3D Character", status: "empty", summary: "Chat-generated or imported Babylon.js character model preview.", assetRefs: [] },
+      { id: "world", title: "World", status: "needs-generation", summary: "Scene, object placement, camera, and lighting direction.", assetRefs: [] },
+      { id: "logic", title: "Logic", status: "ready", summary: "Node graph projection of code-driven gameplay logic.", assetRefs: [] },
+      { id: "ui-dialogue", title: "UI & Dialogue", status: "ready", summary: "Dialogue tree, HUD, menus, prompts, and choice flow.", assetRefs: [] },
+      { id: "audio", title: "Audio", status: "empty", summary: "Sound plan, music, ambience, event bindings, and volume groups.", assetRefs: [] },
+      { id: "publish", title: "Publish", status: "ready", summary: "Validation, local build, export, and preview readiness.", assetRefs: [] },
+    ],
+  };
+}
+
+function normalizeLogicGraph(graph = {}, updatedAt = new Date().toISOString()) {
+  const record = graph && typeof graph === "object" ? graph : {};
+  const defaults = defaultLogicGraph(updatedAt);
+  return {
+    source: record.source === "ai-proposed" ? "ai-proposed" : "code-derived",
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : updatedAt,
+    nodes: Array.isArray(record.nodes) && record.nodes.length ? record.nodes : defaults.nodes,
+    edges: Array.isArray(record.edges) && record.edges.length ? record.edges : defaults.edges,
+  };
+}
+
+function defaultLogicGraph(updatedAt) {
+  return {
+    source: "code-derived",
+    updatedAt,
+    nodes: [
+      { id: "node-start", kind: "trigger", title: "Start game", summary: "Initialize scene and player state.", codeRefs: ["src/main.js"], x: 40, y: 80 },
+      { id: "node-choice", kind: "dialogue", title: "Story choice", summary: "Present player decisions.", codeRefs: ["src/main.js"], x: 260, y: 40 },
+      { id: "node-state", kind: "state", title: "Update state", summary: "Track gameplay flags.", codeRefs: ["src/main.js"], x: 260, y: 180 },
+      { id: "node-ending", kind: "ending", title: "Resolve ending", summary: "Branch to a final result.", codeRefs: ["src/main.js"], x: 500, y: 110 },
+    ],
+    edges: [
+      { id: "edge-start-choice", from: "node-start", to: "node-choice", label: "opens" },
+      { id: "edge-choice-state", from: "node-choice", to: "node-state", label: "sets" },
+      { id: "edge-state-ending", from: "node-state", to: "node-ending", label: "resolves" },
+    ],
+  };
 }
 
 async function readGameSparkSkill() {
@@ -787,6 +857,9 @@ async function createCodexPrompt(request) {
     "Generated src/main.js must be directly browser-runnable from build/index.html. Do not use bare npm imports in generated game source. Use the global Phaser object for Phaser projects and the global BABYLON object for Babylon.js projects.",
     "For Babylon.js 3D/HD2D generation, before running image-blaster, use OpenAI Image 2 to generate a clean background/environment reference image from the user's prompt, save it under assets/scenes or assets/textures, and pass that image to image-blaster as its required reference input. The reference image must not include the final character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text.",
     "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
+    "Maintain manifest.editor with applyMode, activeTool, and tool summaries for character-2d, character-3d, world, logic, ui-dialogue, audio, and publish.",
+    "Maintain manifest.logicGraph as a visual projection of canonical source code. Code is authoritative; graph edits are structured requests that must result in code changes plus refreshed graph metadata.",
+    "If applyMode is preview, describe proposed file and asset changes before applying them. If applyMode is auto, apply the change, validate, and report what changed.",
     "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",
     "When ENGINE is babylonjs, load image-blaster generated scene/model assets into a Babylon.js Engine and Scene, then overlay the 2D character and bottom dialogue UI on top of that scene.",
     "When ENGINE is phaser, load sprites, tilemaps, images, audio, and UI directly into Phaser scenes and keep the build browser-playable from build/index.html.",

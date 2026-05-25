@@ -1,4 +1,15 @@
-import type { AgentEvent, CodexRunRequest, GameEngine, GameProjectAsset, GameProjectManifest, PromptBlock, PublishedGame } from "../types/project-types";
+import type {
+  AgentEvent,
+  CodexRunRequest,
+  EditorToolId,
+  GameEngine,
+  GameProjectAsset,
+  GameProjectManifest,
+  LogicGraph,
+  ProjectEditorState,
+  PromptBlock,
+  PublishedGame,
+} from "../types/project-types";
 
 export const spriteEmotions = ["idle", "surprised", "happy", "sad", "laugh"] as const;
 
@@ -52,6 +63,8 @@ export const codexSystemPrompt = [
   "Each sprite sheet must be 4 columns by 3 rows, 12 frames total, each frame treated as 3:4 content inside its cell. Name files [character]_[emotion].png.",
   "For Babylon.js 3D/HD2D game generation, first use OpenAI Image 2 to create a clean background/environment reference image from the user's prompt with no character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text. Save it under assets/scenes/ or assets/textures/, then clone https://github.com/neilsonnn/image-blaster when the local skills/image-blaster folder is missing, run it with that reference image plus the required World Labs API and fal API credentials, and import the resulting scene/model files into assets/scenes/ or assets/models/.",
   "For Babylon.js games, load generated scene/model assets into a Babylon.js Engine and Scene. For Phaser games, build a Phaser.Game config and Phaser.Scene classes. Add UI and story/gameplay systems appropriate to the selected engine.",
+  "The editor is chat-led. Respect editor.applyMode: preview means propose file/asset changes before applying; auto means apply changes and validate immediately.",
+  "Generated game code is canonical. logicGraph is an editable visual projection of code. When a user changes graph nodes or edges, treat it as a structured change request, update source code, and refresh logicGraph metadata from the new code.",
   "Record all generated assets in manifest.json with source, usage, paths, and prompt provenance.",
   "Save every run under runs/<timestamp>/ with the user prompt, agent log, changed files summary, and generated asset manifest.",
 ].join("\n");
@@ -72,6 +85,8 @@ export function createManifest(title: string, engine: GameEngine = "babylonjs"):
     title,
     style: engine === "phaser" ? "2D" : "babylonjs",
     engine,
+    editor: createDefaultEditorState(),
+    logicGraph: createDefaultLogicGraph(now),
     createdAt: now,
     updatedAt: now,
     workspacePath: slug,
@@ -97,6 +112,76 @@ export function createManifest(title: string, engine: GameEngine = "babylonjs"):
     ],
     assets: createStarterAssets(slug),
   };
+}
+
+export function createDefaultEditorState(): ProjectEditorState {
+  return {
+    applyMode: "preview",
+    activeTool: "logic",
+    tools: [
+      toolState("character-2d", "2D Character", "needs-generation", "Chat-generated sprite sheets with emotion animation preview.", ["asset-lantern-idle"]),
+      toolState("character-3d", "3D Character", "empty", "Chat-generated or imported Babylon.js character model preview.", []),
+      toolState("world", "World", "needs-generation", "Scene, object placement, camera, and lighting direction.", ["asset-world"]),
+      toolState("logic", "Logic", "ready", "Node graph projection of triggers, conditions, actions, state, dialogue, and endings.", ["asset-scene"]),
+      toolState("ui-dialogue", "UI & Dialogue", "ready", "Dialogue tree, HUD, menus, prompts, and choice flow.", ["asset-scene"]),
+      toolState("audio", "Audio", "empty", "Sound plan, music, ambience, event bindings, and volume groups.", []),
+      toolState("publish", "Publish", "ready", "Validation, local build, export, and playable preview readiness.", []),
+    ],
+  };
+}
+
+export function createDefaultLogicGraph(updatedAt = new Date().toISOString()): LogicGraph {
+  return {
+    source: "code-derived",
+    updatedAt,
+    nodes: [
+      {
+        id: "node-start",
+        kind: "trigger",
+        title: "Start game",
+        summary: "Initialize scene, player state, and opening objective.",
+        codeRefs: ["src/main.js"],
+        x: 40,
+        y: 80,
+      },
+      {
+        id: "node-choice",
+        kind: "dialogue",
+        title: "Story choice",
+        summary: "Present two or three player decisions and update emotion/state.",
+        codeRefs: ["src/main.js"],
+        x: 260,
+        y: 40,
+      },
+      {
+        id: "node-state",
+        kind: "state",
+        title: "Update state",
+        summary: "Track flags, inventory, score, or relationship changes.",
+        codeRefs: ["src/main.js"],
+        x: 260,
+        y: 180,
+      },
+      {
+        id: "node-ending",
+        kind: "ending",
+        title: "Resolve ending",
+        summary: "Branch to the ending that matches accumulated state.",
+        codeRefs: ["src/main.js"],
+        x: 500,
+        y: 110,
+      },
+    ],
+    edges: [
+      { id: "edge-start-choice", from: "node-start", to: "node-choice", label: "opens" },
+      { id: "edge-choice-state", from: "node-choice", to: "node-state", label: "sets" },
+      { id: "edge-state-ending", from: "node-state", to: "node-ending", label: "resolves" },
+    ],
+  };
+}
+
+function toolState(id: EditorToolId, title: string, status: ProjectEditorState["tools"][number]["status"], summary: string, assetRefs: string[]) {
+  return { id, title, status, summary, assetRefs };
 }
 
 export function createMockRunEvents(request: CodexRunRequest): AgentEvent[] {

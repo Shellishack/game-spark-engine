@@ -1374,7 +1374,7 @@ pre {
 }
 
 .chat-panel {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   align-content: stretch;
   border-right: 3px solid var(--line);
   background: rgba(223, 245, 255, 0.68);
@@ -1539,6 +1539,78 @@ pre {
   min-height: 0;
 }
 
+.editor-tool-list {
+  display: grid;
+  gap: 0.8rem;
+  border-top: 3px dashed var(--line);
+  padding: 0.85rem 1rem 0.75rem;
+}
+
+.tool-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.tool-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 0.65rem;
+  width: 100%;
+  align-items: start;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-c);
+  padding: 0.55rem;
+  background: var(--paper);
+  box-shadow: 2px 3px 0 var(--line);
+  color: var(--secondary);
+  text-align: left;
+}
+
+.tool-row.selected,
+.tool-row:hover {
+  background: var(--primary-soft);
+  transform: translate(-1px, -1px) rotate(-0.4deg);
+}
+
+.tool-status {
+  width: 12px;
+  aspect-ratio: 1;
+  margin-top: 0.28rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--yellow);
+}
+
+.tool-status.ready {
+  background: var(--green);
+}
+
+.tool-status.empty {
+  background: var(--secondary-soft);
+}
+
+.tool-status.needs-generation {
+  background: var(--pink);
+}
+
+.tool-row strong,
+.tool-row small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-row strong {
+  font-size: 0.86rem;
+}
+
+.tool-row small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
 .nav-tab-content {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
@@ -1574,6 +1646,202 @@ pre {
   overscroll-behavior: contain;
   scroll-behavior: smooth;
   scrollbar-gutter: stable;
+}
+
+.editor-workspace {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 0;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-a);
+  padding: 0.85rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.editor-workspace-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.editor-workspace h3 {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 1.05rem;
+}
+
+.editor-tool-summary {
+  margin: 0;
+  color: #24364d;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.apply-toggle {
+  display: flex;
+  border: 3px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.apply-toggle button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 0;
+  padding: 0.28rem 0.65rem;
+  background: transparent;
+  box-shadow: none;
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.apply-toggle button.active {
+  background: var(--yellow);
+}
+
+.logic-graph-preview,
+.tool-preview {
+  min-height: 170px;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-b);
+  background:
+    linear-gradient(90deg, rgba(38, 61, 91, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(38, 61, 91, 0.1) 1px, transparent 1px),
+    var(--primary-soft);
+  background-size: 28px 28px, 28px 28px, auto;
+  overflow: hidden;
+}
+
+.logic-graph-preview svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+}
+
+.logic-graph-preview path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 3;
+}
+
+.logic-graph-preview text {
+  fill: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.graph-node rect {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 3;
+}
+
+.graph-node.dialogue rect {
+  fill: var(--yellow);
+}
+
+.graph-node.state rect {
+  fill: var(--green);
+}
+
+.graph-node.ending rect {
+  fill: var(--pink);
+}
+
+.logic-node-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0 0.65rem 0.65rem;
+}
+
+.logic-node-list article {
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 0.45rem;
+  background: var(--paper);
+}
+
+.logic-node-list strong,
+.logic-node-list span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.logic-node-list strong {
+  font-size: 0.78rem;
+}
+
+.logic-node-list span {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.tool-preview {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.tool-preview-stage {
+  display: grid;
+  width: min(100%, 320px);
+  min-height: 120px;
+  place-items: center;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-b);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+}
+
+.tool-preview-stage span,
+.tool-preview-stage strong {
+  display: block;
+}
+
+.tool-preview-stage span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tool-preview-stage strong {
+  max-width: 18ch;
+  color: var(--secondary);
+  font-size: 1rem;
+}
+
+.tool-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.tool-action-grid button {
+  display: grid;
+  gap: 0.18rem;
+  min-height: 58px;
+  border-radius: var(--radius-c);
+  padding: 0.55rem;
+  background: var(--yellow);
+  color: var(--secondary);
+  text-align: left;
+}
+
+.tool-action-grid span {
+  font-size: 0.74rem;
+  line-height: 1.25;
 }
 
 .progress-panel {
