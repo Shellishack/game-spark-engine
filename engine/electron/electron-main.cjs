@@ -311,8 +311,8 @@ async function rebuildProjectPreview(_event, projectId) {
     await fs.writeFile(path.join(tempBuild, "main.js"), source, "utf8");
     await copyIfExists(path.join(projectRoot, "assets"), path.join(tempBuild, "assets"));
 
-    const manifest = await readProjectManifest(projectRoot);
-    const engine = manifest.engine === "phaser" ? "phaser" : "babylonjs";
+    const projectManifest = await readProjectManifest(projectRoot);
+    const engine = projectManifest.engine === "phaser" ? "phaser" : "babylonjs";
     await copyEngineVendor(engine, tempBuild);
     const html = (await fileExists(sourceHtmlPath))
       ? rewriteBuildHtml(await fs.readFile(sourceHtmlPath, "utf8"), safeProjectId, engine)
