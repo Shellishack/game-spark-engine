@@ -6,13 +6,14 @@ import {
   publishedGames,
   spriteEmotions,
 } from "../data/codex-pipeline";
-import { buildPromptFromTemplate, gameCreationTemplates } from "../data/game-templates";
+import { buildPromptFromTemplate, gameCreationTemplates, templateSupportsPhaser } from "../data/game-templates";
 import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
 import type {
   AgentEvent,
   AgentPhase,
   AgentEnvVariable,
   CodexRunRequest,
+  GameEngine,
   GameProjectAsset,
   GameProjectManifest,
   PromptBlock,
@@ -31,7 +32,8 @@ const phaseLabels: Record<AgentPhase, string> = {
   error: "Error",
 };
 
-const supportedStyles = ["image-blaster", "2D", "3D"];
+const supportedStyles = ["2D", "HD2D", "3D"];
+const supportedEngines: GameEngine[] = ["babylonjs", "phaser"];
 const supportedGameTypes = Array.from(new Set(gameCreationTemplates.map((template) => template.type)));
 const randomGameIdeas = [
   {
@@ -127,6 +129,7 @@ export default function App() {
   const [newProjectName, setNewProjectName] = useState("Lantern Grove");
   const [projectNameError, setProjectNameError] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState(gameCreationTemplates[0]?.id ?? "");
+  const [selectedEngine, setSelectedEngine] = useState<GameEngine>("babylonjs");
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectSummary[]>([]);
   const [previewableProjectIds, setPreviewableProjectIds] = useState<Set<string>>(new Set());
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
@@ -238,8 +241,9 @@ export default function App() {
       }
       setProjectNameError("");
     }
+    const engine = mode === "create" ? engineForTemplate(selectedTemplateId, selectedEngine) : project?.engine ?? selectedEngine;
     const nextProject =
-      mode === "create" ? createManifest(requestedProjectName) : project ?? createManifest(titleFromPrompt(prompt));
+      mode === "create" ? createManifest(requestedProjectName, engine) : project ?? createManifest(titleFromPrompt(prompt), engine);
     const workflowIntent = explicitIntent ?? classifyWorkflowIntent(prompt, mode);
     const request: CodexRunRequest = {
       projectId: nextProject.id,
@@ -247,12 +251,14 @@ export default function App() {
       prompt,
       mode,
       workflowIntent,
+      engine,
       attachments: promptBlocks,
     };
 
     logInteraction("user_message", {
       mode,
       workflowIntent,
+      engine,
       projectId: nextProject.id,
       projectTitle: nextProject.title,
       content: prompt,
@@ -265,6 +271,7 @@ export default function App() {
     logInteraction("agent_run_submitted", {
       mode,
       workflowIntent,
+      engine,
       projectId: nextProject.id,
       projectTitle: nextProject.title,
       promptLength: prompt.length,
@@ -439,7 +446,12 @@ export default function App() {
             projectName={newProjectName}
             projectNameError={projectNameError}
             selectedTemplateId={selectedTemplateId}
-            onTemplateChange={setSelectedTemplateId}
+            selectedEngine={selectedEngine}
+            onTemplateChange={(templateId) => {
+              setSelectedTemplateId(templateId);
+              if (!templateSupportsPhaser(templateId)) setSelectedEngine("babylonjs");
+            }}
+            onEngineChange={setSelectedEngine}
             onProjectNameChange={(value) => {
               setProjectNameError("");
               setNewProjectName(value);
@@ -686,6 +698,8 @@ type PromptComposerProps = {
   };
   selectedTemplateId?: string;
   onTemplateChange?: (templateId: string) => void;
+  selectedEngine?: GameEngine;
+  onEngineChange?: (engine: GameEngine) => void;
   workspaceControls?: {
     workspace: WorkspaceInfo;
     onSelectWorkspace: () => void;
@@ -710,7 +724,9 @@ function Home(
     projectName: string;
     projectNameError: string;
     selectedTemplateId: string;
+    selectedEngine: GameEngine;
     onTemplateChange: (templateId: string) => void;
+    onEngineChange: (engine: GameEngine) => void;
     onProjectNameChange: (value: string) => void;
   },
 ) {
@@ -772,7 +788,9 @@ function Home(
               onResetWorkspace: props.onResetWorkspace,
             }}
             selectedTemplateId={props.selectedTemplateId}
+            selectedEngine={props.selectedEngine}
             onTemplateChange={props.onTemplateChange}
+            onEngineChange={props.onEngineChange}
             promptBlocks={props.promptBlocks}
             actionLabel="Generate game"
             onDraftChange={props.onDraftChange}
@@ -1084,7 +1102,7 @@ function NavigationPanel({
       <div className="nav-brand">
         <div>
           <h1>{project?.title ?? "Untitled"}</h1>
-          <span>{project?.style ?? "image-blaster"} project</span>
+          <span>{project ? `${engineLabel(project.engine)} project` : "No project"}</span>
         </div>
       </div>
 
@@ -1326,7 +1344,9 @@ function PromptComposer({
   showGameSelectors = false,
   projectNameControls,
   selectedTemplateId,
+  selectedEngine = "babylonjs",
   onTemplateChange,
+  onEngineChange,
   workspaceControls,
   promptBlocks,
   actionLabel,
@@ -1334,8 +1354,9 @@ function PromptComposer({
   onAddAttachment,
   onSubmit,
 }: PromptComposerProps) {
-  const [selectedStyle, setSelectedStyle] = useState(supportedStyles[1] ?? supportedStyles[0] ?? "");
   const activeTemplateId = selectedTemplateId ?? gameCreationTemplates[0]?.id ?? "";
+  const canUsePhaser = templateSupportsPhaser(activeTemplateId);
+  const effectiveEngine = canUsePhaser ? selectedEngine : "babylonjs";
   const draft = promptBlocks.find((block): block is Extract<PromptBlock, { type: "text" }> => block.id === "draft" && block.type === "text");
   return (
     <section className={`composer ${compact ? "compact" : ""}`}>
@@ -1392,8 +1413,9 @@ function PromptComposer({
                 <select
                   value={activeTemplateId}
                   onChange={(event) => {
-                    logInteraction("composer_template_selected", { templateId: event.target.value });
-                    onTemplateChange?.(event.target.value);
+                    const nextTemplateId = event.target.value;
+                    logInteraction("composer_template_selected", { templateId: nextTemplateId });
+                    onTemplateChange?.(nextTemplateId);
                   }}
                 >
                   {gameCreationTemplates.map((template) => (
@@ -1404,17 +1426,19 @@ function PromptComposer({
                 </select>
               </label>
               <label>
-                <span>Style</span>
+                <span>Engine</span>
                 <select
-                  value={selectedStyle}
+                  value={effectiveEngine}
+                  disabled={!canUsePhaser}
                   onChange={(event) => {
-                    logInteraction("composer_style_selected", { style: event.target.value });
-                    setSelectedStyle(event.target.value);
+                    const nextEngine = event.target.value as GameEngine;
+                    logInteraction("composer_engine_selected", { engine: nextEngine, templateId: activeTemplateId });
+                    onEngineChange?.(nextEngine);
                   }}
                 >
-                  {supportedStyles.map((style) => (
-                    <option key={style} value={style}>
-                      {style}
+                  {supportedEngines.map((engine) => (
+                    <option key={engine} value={engine}>
+                      {engine === "babylonjs" ? "Babylon.js" : "Phaser"}
                     </option>
                   ))}
                 </select>
@@ -1757,15 +1781,31 @@ function normalizeManifest(manifest: GameProjectManifest): GameProjectManifest {
         };
       })
     : [];
+  const engine: GameEngine = manifest.engine === "phaser" ? "phaser" : "babylonjs";
+  const runtimeEntry =
+    typeof manifest.runtimeEntry === "string"
+      ? manifest.runtimeEntry
+      : typeof manifest.playCanvasEntry === "string"
+        ? manifest.playCanvasEntry
+        : "src/main.js";
 
   return {
     id,
     title,
-    style: "image-blaster",
+    style: typeof manifest.style === "string" && ["2D", "HD2D", "3D", "image-blaster", "babylonjs"].includes(manifest.style) ? manifest.style : "babylonjs",
+    engine,
     createdAt: typeof manifest.createdAt === "string" ? manifest.createdAt : now,
     updatedAt: typeof manifest.updatedAt === "string" ? manifest.updatedAt : now,
     workspacePath: typeof manifest.workspacePath === "string" ? manifest.workspacePath : id,
-    playCanvasEntry: typeof manifest.playCanvasEntry === "string" ? manifest.playCanvasEntry : "src/main.js",
+    runtimeEntry,
+    babylonEntry: typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : engine === "babylonjs" ? runtimeEntry : undefined,
+    phaserEntry:
+      typeof manifest.phaserEntry === "string"
+        ? manifest.phaserEntry
+        : engine === "phaser"
+          ? runtimeEntry
+          : undefined,
+    playCanvasEntry: typeof manifest.playCanvasEntry === "string" ? manifest.playCanvasEntry : undefined,
     buildPath: typeof manifest.buildPath === "string" ? manifest.buildPath : `${id}/build/index.html`,
     publishedPath: typeof manifest.publishedPath === "string" ? manifest.publishedPath : undefined,
     promptHistory,
@@ -1798,6 +1838,14 @@ function findDuplicateProject(projectName: string, projects: WorkspaceProjectSum
   const requestedId = slugifyTitle(projectName);
   const requestedTitle = projectName.trim().toLowerCase();
   return projects.find((item) => item.id.toLowerCase() === requestedId || item.title.trim().toLowerCase() === requestedTitle);
+}
+
+function engineForTemplate(templateId: string, requestedEngine: GameEngine): GameEngine {
+  return templateSupportsPhaser(templateId) ? requestedEngine : "babylonjs";
+}
+
+function engineLabel(engine: GameEngine) {
+  return engine === "phaser" ? "Phaser" : "Babylon.js";
 }
 
 function formatCodexLogForDisplay(text: string) {

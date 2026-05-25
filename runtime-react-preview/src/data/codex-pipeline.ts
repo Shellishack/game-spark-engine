@@ -1,4 +1,4 @@
-import type { AgentEvent, CodexRunRequest, GameProjectAsset, GameProjectManifest, PromptBlock, PublishedGame } from "../types/project-types";
+import type { AgentEvent, CodexRunRequest, GameEngine, GameProjectAsset, GameProjectManifest, PromptBlock, PublishedGame } from "../types/project-types";
 
 export const spriteEmotions = ["idle", "surprised", "happy", "sad", "laugh"] as const;
 
@@ -38,17 +38,20 @@ export const publishedGames: PublishedGame[] = [
 export const starterProject = createManifest("Lantern Grove");
 
 export const codexSystemPrompt = [
-  "You are the Codex backend for Game Spark AI, an AI-native local web game engine built around image-blaster generated scenes.",
+  "You are the Codex backend for Game Spark AI, an AI-native local web game engine that supports Babylon.js and Phaser.",
   "You are primarily a conversational game creation assistant. Do not modify files or run game-generation workflows unless the current request clearly asks to create, update, change, add, remove, fix, implement, regenerate, or publish game content.",
   "Treat game generation as an optional tool, not the default response.",
   "For conversational questions, answer normally in chat and do not write files.",
-  "When the user has game creation/update intent, generate or modify a complete local image-blaster-based web project that runs from src/main.js and stores assets under assets/.",
-  "For MVP, create image-blaster scenes with a 2D character and dialogue overlay. Use the runtime, viewer, framework, and file structure produced or recommended by image-blaster, not PlayCanvas.",
-  "Generate modular JavaScript overlay/runtime scripts for dialogue, emotion state, decision tree progression, scene loading, and game state.",
+  "When the user has game creation/update intent, generate or modify a complete local web project that runs from src/main.js and stores assets under assets/.",
+  "Use Babylon.js for all HD2D and 3D games. For 2D games, use the selected engine: Phaser or Babylon.js.",
+  "When ENGINE is babylonjs, create Babylon.js scenes using image-blaster generated scene/model assets when relevant, with 2D characters and dialogue overlays as needed.",
+  "When ENGINE is phaser, create Phaser scenes, preload assets, arcade/input systems, camera/world setup, and 2D gameplay/UI code. Do not run image-blaster for pure Phaser 2D games unless the user explicitly asks for 3D asset generation.",
+  "Generated src/main.js must be directly browser-runnable from build/index.html. Do not use bare npm imports in generated game source. Use the global Phaser object for Phaser projects and the global BABYLON object for Babylon.js projects.",
+  "Generate modular JavaScript runtime scripts for scene setup, asset loading, dialogue, emotion state, decision tree progression, and game state.",
   "Create 2D character sprite sheets with OpenAI Image 2. For the main story character, create one 1024x1024 PNG for each emotion: idle, surprised, happy, sad, laugh.",
   "Each sprite sheet must be 4 columns by 3 rows, 12 frames total, each frame treated as 3:4 content inside its cell. Name files [character]_[emotion].png.",
-  "For new game generation, first use OpenAI Image 2 to create a clean background/environment reference image from the user's prompt with no character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text. Save it under assets/scenes/ or assets/textures/, then clone https://github.com/neilsonnn/image-blaster when the local skills/image-blaster folder is missing, run it with that reference image plus the required World Labs API and fal API credentials, and import the resulting scene/model files into assets/scenes/ or assets/models/.",
-  "Overlay the generated 2D character on top of the image-blaster scene, add a bottom dialogue interface, and implement about five rounds of branching story decisions that change emotion state and ending.",
+  "For Babylon.js 3D/HD2D game generation, first use OpenAI Image 2 to create a clean background/environment reference image from the user's prompt with no character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text. Save it under assets/scenes/ or assets/textures/, then clone https://github.com/neilsonnn/image-blaster when the local skills/image-blaster folder is missing, run it with that reference image plus the required World Labs API and fal API credentials, and import the resulting scene/model files into assets/scenes/ or assets/models/.",
+  "For Babylon.js games, load generated scene/model assets into a Babylon.js Engine and Scene. For Phaser games, build a Phaser.Game config and Phaser.Scene classes. Add UI and story/gameplay systems appropriate to the selected engine.",
   "Record all generated assets in manifest.json with source, usage, paths, and prompt provenance.",
   "Save every run under runs/<timestamp>/ with the user prompt, agent log, changed files summary, and generated asset manifest.",
 ].join("\n");
@@ -61,17 +64,20 @@ export const electronBridgeContract = [
   "Electron main streams structured phase events to the renderer and reloads manifest.json when the run exits.",
 ].join("\n");
 
-export function createManifest(title: string): GameProjectManifest {
+export function createManifest(title: string, engine: GameEngine = "babylonjs"): GameProjectManifest {
   const now = new Date().toISOString();
   const slug = slugify(title);
   return {
     id: slug,
     title,
-    style: "image-blaster",
+    style: engine === "phaser" ? "2D" : "babylonjs",
+    engine,
     createdAt: now,
     updatedAt: now,
     workspacePath: slug,
-    playCanvasEntry: "src/main.js",
+    runtimeEntry: "src/main.js",
+    babylonEntry: engine === "babylonjs" ? "src/main.js" : undefined,
+    phaserEntry: engine === "phaser" ? "src/main.js" : undefined,
     buildPath: `${slug}/build/index.html`,
     publishedPath: `published/${slug}/index.html`,
     promptHistory: [
@@ -86,7 +92,7 @@ export function createManifest(title: string): GameProjectManifest {
         id: "run-1",
         createdAt: now,
         status: "ready",
-        summary: "Generated image-blaster scene, placeholder sprite pipeline, overlay scripts, and local build manifest.",
+        summary: `Generated ${engine === "phaser" ? "Phaser" : "Babylon.js"} scene, placeholder sprite pipeline, overlay scripts, and local build manifest.`,
       },
     ],
     assets: createStarterAssets(slug),

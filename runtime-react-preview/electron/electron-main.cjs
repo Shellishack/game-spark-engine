@@ -311,9 +311,12 @@ async function rebuildProjectPreview(_event, projectId) {
     await fs.writeFile(path.join(tempBuild, "main.js"), source, "utf8");
     await copyIfExists(path.join(projectRoot, "assets"), path.join(tempBuild, "assets"));
 
+    const manifest = await readProjectManifest(projectRoot);
+    const engine = manifest.engine === "phaser" ? "phaser" : "babylonjs";
+    await copyEngineVendor(engine, tempBuild);
     const html = (await fileExists(sourceHtmlPath))
-      ? rewriteBuildHtml(await fs.readFile(sourceHtmlPath, "utf8"), safeProjectId)
-      : defaultBuildHtml(titleFromProjectId(safeProjectId));
+      ? rewriteBuildHtml(await fs.readFile(sourceHtmlPath, "utf8"), safeProjectId, engine)
+      : defaultBuildHtml(titleFromProjectId(safeProjectId), engine);
     await fs.writeFile(path.join(tempBuild, "index.html"), html, "utf8");
 
     await stopPreviewServer(safeProjectId);
@@ -363,17 +366,19 @@ async function waitForUnlockedBuild(buildPath) {
   }
 }
 
-function rewriteBuildHtml(html, projectId) {
+function rewriteBuildHtml(html, projectId, engine = "babylonjs") {
   const rewritten = html
     .replace(/<script\s+src=["']\.\.\/src\/main\.js["']><\/script>/i, '<script src="./main.js"></script>')
     .replace(/<script\s+src=["']src\/main\.js["']><\/script>/i, '<script src="./main.js"></script>')
     .replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, '<script src="./main.js"></script>');
 
-  if (rewritten.includes('<script src="./main.js"></script>')) {
-    return rewritten;
+  const withEngine = ensureEngineScript(rewritten, engine);
+
+  if (withEngine.includes('<script src="./main.js"></script>')) {
+    return withEngine;
   }
 
-  return rewritten.replace(/<\/body>/i, '    <script src="./main.js"></script>\n  </body>');
+  return withEngine.replace(/<\/body>/i, `${engineScriptTag(engine)}\n    <script src="./main.js"></script>\n  </body>`);
 }
 
 function rewriteSourceForBuild(source) {
@@ -382,7 +387,7 @@ function rewriteSourceForBuild(source) {
     .replace(/(['"`])\.\.\/assets\//g, "$1./assets/");
 }
 
-function defaultBuildHtml(title) {
+function defaultBuildHtml(title, engine = "babylonjs") {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -392,10 +397,52 @@ function defaultBuildHtml(title) {
   </head>
   <body>
     <canvas id="application"></canvas>
+${engineScriptTag(engine)}
     <script src="./main.js"></script>
   </body>
 </html>
 `;
+}
+
+async function readProjectManifest(projectRoot) {
+  try {
+    return JSON.parse(await fs.readFile(path.join(projectRoot, "manifest.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+async function copyEngineVendor(engine, buildRoot) {
+  const vendorFiles =
+    engine === "phaser"
+      ? [{ source: path.join(appRoot, "node_modules", "phaser", "dist", "phaser.min.js"), target: path.join(buildRoot, "vendor", "phaser.min.js") }]
+      : [
+          { source: path.join(appRoot, "node_modules", "@babylonjs", "core", "babylon.js"), target: path.join(buildRoot, "vendor", "babylon.js") },
+          { source: path.join(appRoot, "node_modules", "@babylonjs", "loaders", "babylonjs.loaders.min.js"), target: path.join(buildRoot, "vendor", "babylonjs.loaders.min.js") },
+        ];
+
+  for (const file of vendorFiles) {
+    if (!(await fileExists(file.source))) continue;
+    await fs.mkdir(path.dirname(file.target), { recursive: true });
+    await fs.copyFile(file.source, file.target);
+  }
+}
+
+function ensureEngineScript(html, engine) {
+  if (engine === "phaser") {
+    if (html.includes("vendor/phaser.min.js") || html.includes("Phaser")) return html;
+    return html.replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, `${engineScriptTag(engine)}\n    <script src="./main.js"></script>`);
+  }
+
+  if (html.includes("vendor/babylon.js") || html.includes("BABYLON")) return html;
+  return html.replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, `${engineScriptTag(engine)}\n    <script src="./main.js"></script>`);
+}
+
+function engineScriptTag(engine) {
+  if (engine === "phaser") {
+    return '    <script src="./vendor/phaser.min.js"></script>';
+  }
+  return ['    <script src="./vendor/babylon.js"></script>', '    <script src="./vendor/babylonjs.loaders.min.js"></script>'].join("\n");
 }
 
 function escapeHtml(value) {
@@ -418,11 +465,14 @@ async function touchManifestAfterRebuild(projectRoot) {
   const now = new Date().toISOString();
   manifest.id = typeof manifest.id === "string" ? manifest.id : path.basename(projectRoot);
   manifest.title = typeof manifest.title === "string" ? manifest.title : titleFromProjectId(manifest.id);
-  manifest.style = typeof manifest.style === "string" ? manifest.style : "image-blaster";
+  manifest.engine = manifest.engine === "phaser" ? "phaser" : "babylonjs";
+  manifest.style = typeof manifest.style === "string" ? manifest.style : manifest.engine === "phaser" ? "2D" : "babylonjs";
   manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
   manifest.updatedAt = now;
   manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : manifest.id;
-  manifest.playCanvasEntry = "src/main.js";
+  manifest.runtimeEntry = typeof manifest.runtimeEntry === "string" ? manifest.runtimeEntry : manifest.playCanvasEntry || "src/main.js";
+  manifest.babylonEntry = typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : manifest.engine === "babylonjs" ? manifest.runtimeEntry : undefined;
+  manifest.phaserEntry = typeof manifest.phaserEntry === "string" ? manifest.phaserEntry : manifest.engine === "phaser" ? manifest.runtimeEntry : undefined;
   manifest.buildPath = `${manifest.id}/build/index.html`;
   manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
   manifest.runHistory = Array.isArray(manifest.runHistory) ? manifest.runHistory : [];
@@ -619,6 +669,7 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
 
   const projectId = request.projectId || path.basename(projectDir);
   const projectTitle = request.projectTitle || titleFromProjectId(projectId);
+  const engine = request.engine === "phaser" ? "phaser" : "babylonjs";
   const promptEntry = {
     id: `prompt-${runId}`,
     content: request.prompt || "",
@@ -635,11 +686,14 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
     manifest = {
       id: projectId,
       title: projectTitle,
-      style: "image-blaster",
+      style: engine === "phaser" ? "2D" : "babylonjs",
+      engine,
       createdAt: now,
       updatedAt: now,
       workspacePath: projectId,
-      playCanvasEntry: "src/main.js",
+      runtimeEntry: "src/main.js",
+      babylonEntry: engine === "babylonjs" ? "src/main.js" : undefined,
+      phaserEntry: engine === "phaser" ? "src/main.js" : undefined,
       buildPath: `${projectId}/build/index.html`,
       publishedPath: `published/${projectId}/index.html`,
       promptHistory: [promptEntry],
@@ -649,11 +703,14 @@ async function upsertInitialManifest(projectDir, request, runId, now) {
   } else {
     manifest.id = typeof manifest.id === "string" ? manifest.id : projectId;
     manifest.title = typeof manifest.title === "string" ? manifest.title : projectTitle;
-    manifest.style = typeof manifest.style === "string" ? manifest.style : "image-blaster";
+    manifest.engine = manifest.engine === "phaser" || engine === "phaser" ? "phaser" : "babylonjs";
+    manifest.style = typeof manifest.style === "string" ? manifest.style : manifest.engine === "phaser" ? "2D" : "babylonjs";
     manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
     manifest.updatedAt = now;
     manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : projectId;
-    manifest.playCanvasEntry = typeof manifest.playCanvasEntry === "string" ? manifest.playCanvasEntry : "src/main.js";
+    manifest.runtimeEntry = typeof manifest.runtimeEntry === "string" ? manifest.runtimeEntry : manifest.playCanvasEntry || "src/main.js";
+    manifest.babylonEntry = typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : manifest.engine === "babylonjs" ? manifest.runtimeEntry : undefined;
+    manifest.phaserEntry = typeof manifest.phaserEntry === "string" ? manifest.phaserEntry : manifest.engine === "phaser" ? manifest.runtimeEntry : undefined;
     manifest.buildPath = typeof manifest.buildPath === "string" ? manifest.buildPath : `${projectId}/build/index.html`;
     manifest.publishedPath = typeof manifest.publishedPath === "string" ? manifest.publishedPath : `published/${projectId}/index.html`;
     manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
@@ -708,6 +765,7 @@ async function readGameSparkSkill() {
 
 async function createCodexPrompt(request) {
   const shouldRunWorkflow = request.workflowIntent === "game_update";
+  const engine = request.engine === "phaser" ? "phaser" : "babylonjs";
   const skillText = await readGameSparkSkill();
   return [
     "You are the Codex backend for Game Spark AI.",
@@ -720,18 +778,24 @@ async function createCodexPrompt(request) {
     "Do not modify files or run game-generation workflows unless WORKFLOW_ALLOWED is true.",
     "If WORKFLOW_ALLOWED is false, answer the user conversationally only. Do not write files. Do not create assets. Do not run shell commands. Do not build the game.",
     "If WORKFLOW_ALLOWED is true, you may use the game generation/update workflow as a tool to satisfy the user's request.",
-    "The game workflow creates or updates a local image-blaster-based web game project in this workspace. Do not target PlayCanvas for new games.",
+    "The game workflow creates or updates a local web game project in this workspace. The selected engine is authoritative.",
+    "Supported engines are Babylon.js and Phaser only. Do not target PlayCanvas.",
+    "Use Babylon.js for all HD2D and 3D games. For 2D games, use ENGINE, which may be phaser or babylonjs.",
     "Do not start Python, python -m http.server, or any ad hoc preview server. Electron owns preview serving with its Node HTTP bridge.",
-    "When using the workflow, use OpenAI Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets.",
-    "Before running image-blaster, use OpenAI Image 2 to generate a clean background/environment reference image from the user's prompt, save it under assets/scenes or assets/textures, and pass that image to image-blaster as its required reference input. The reference image must not include the final character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text.",
+    "When ENGINE is babylonjs, use OpenAI Image 2 for 2D sprite sheets and neilsonnn/image-blaster for 3D world assets when relevant.",
+    "When ENGINE is phaser, build a Phaser 2D game with Phaser.Game config, Phaser.Scene classes, asset preloading, input, camera, physics or arcade systems as appropriate, and 2D UI. Do not run image-blaster for pure Phaser 2D games unless the user explicitly asks for 3D generated assets.",
+    "Generated src/main.js must be directly browser-runnable from build/index.html. Do not use bare npm imports in generated game source. Use the global Phaser object for Phaser projects and the global BABYLON object for Babylon.js projects.",
+    "For Babylon.js 3D/HD2D generation, before running image-blaster, use OpenAI Image 2 to generate a clean background/environment reference image from the user's prompt, save it under assets/scenes or assets/textures, and pass that image to image-blaster as its required reference input. The reference image must not include the final character sprite, dialogue UI, buttons, HUD, captions, logos, or UI text.",
     "When using the workflow, write manifest.json, src/main.js, assets, build output, and runs metadata.",
     "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",
-    "Use the runtime, viewer, framework, and file structure produced or recommended by image-blaster, then overlay the 2D character and bottom dialogue UI on top of that scene.",
+    "When ENGINE is babylonjs, load image-blaster generated scene/model assets into a Babylon.js Engine and Scene, then overlay the 2D character and bottom dialogue UI on top of that scene.",
+    "When ENGINE is phaser, load sprites, tilemaps, images, audio, and UI directly into Phaser scenes and keep the build browser-playable from build/index.html.",
     "Generated sprite sheets must be loaded by the overlay/runtime layer and animated from the 4x3 sheet layout.",
-    "Generated 3D model or scene assets from image-blaster must be saved under assets/models or assets/scenes and loaded/instantiated through the image-blaster-compatible runtime. If image-blaster is unavailable, record the gap and do not claim generated 3D assets exist.",
+    "Generated 3D model or scene assets from image-blaster must be saved under assets/models or assets/scenes and loaded/instantiated through Babylon.js. If image-blaster is unavailable, record the gap and do not claim generated 3D assets exist.",
     "Validation must fail or record not-ready status when generated assets are manifest-only or not visible in the game.",
     "",
     `WORKFLOW_ALLOWED: ${shouldRunWorkflow ? "true" : "false"}`,
+    `ENGINE: ${engine}`,
     `Mode: ${request.mode}`,
     `User prompt:\n${request.prompt}`,
     "",

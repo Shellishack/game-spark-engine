@@ -105,3 +105,8 @@ export function buildPromptFromTemplate(templateId: string, userMessage: string)
     .filter(Boolean)
     .join("\n");
 }
+
+export function templateSupportsPhaser(templateId: string) {
+  const template = gameCreationTemplates.find((item) => item.id === templateId) ?? gameCreationTemplates[0];
+  return template?.style === "2D";
+}

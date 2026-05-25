@@ -11,7 +11,8 @@ export type AgentPhase =
 export type AssetKind = "sprite" | "model" | "texture" | "script" | "scene";
 export type AssetSource = "generated" | "imported" | "system";
 
-export type Hd2dStyle = "HD2D" | "image-blaster";
+export type Hd2dStyle = "2D" | "HD2D" | "3D" | "image-blaster" | "babylonjs";
+export type GameEngine = "babylonjs" | "phaser";
 
 export type GameProjectAsset = {
   id: string;
@@ -40,10 +41,14 @@ export type GameProjectManifest = {
   id: string;
   title: string;
   style: Hd2dStyle;
+  engine: GameEngine;
   createdAt: string;
   updatedAt: string;
   workspacePath: string;
-  playCanvasEntry: string;
+  runtimeEntry: string;
+  babylonEntry?: string;
+  phaserEntry?: string;
+  playCanvasEntry?: string;
   buildPath: string;
   publishedPath?: string;
   promptHistory: Array<{ id: string; content: string; createdAt: string }>;
@@ -65,6 +70,7 @@ export type CodexRunRequest = {
   prompt: string;
   mode: "chat" | "create" | "iterate";
   workflowIntent: "conversation" | "game_update";
+  engine: GameEngine;
   attachments: PromptBlock[];
 };
 

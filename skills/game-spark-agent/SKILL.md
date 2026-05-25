@@ -1,6 +1,6 @@
 ---
 name: game-spark-agent
-description: Use when creating, updating, reviewing, or operating Game Spark AI projects without relying on the Electron UI. This skill defines the core agentic loop for an AI-native local-first game engine using image-blaster's generated scene/runtime stack, local files, generated 2D sprite sheets, generated 3D scene assets, JavaScript overlay code, manifests, and playable builds.
+description: Use when creating, updating, reviewing, or operating Game Spark AI projects without relying on the Electron UI. This skill defines the core agentic loop for an AI-native local-first game engine using Babylon.js or Phaser, image-blaster generated assets when relevant, local files, generated 2D sprite sheets, generated 3D scene assets, JavaScript code, manifests, and playable builds.
 ---
 
 # Game Spark Agent
@@ -15,7 +15,12 @@ Treat game generation as a tool, not the default response.
 - Game update: create or modify project files only when the user clearly asks to create, generate, rebuild, update, modify, fix, or publish game content.
 - Review/debug: inspect the project, identify issues, and patch only what is needed.
 
-When game generation is allowed, build a local image-blaster-based interactive story scene. Do not target PlayCanvas for new games.
+When game generation is allowed, build a local game with the selected engine. Supported engines are only `babylonjs` and `phaser`.
+
+- Use `babylonjs` for all 3D and HD2D games, and optionally for 2D games when the user selects Babylon.js.
+- Use `phaser` only for 2D games when the user selects Phaser.
+- Do not target PlayCanvas for new games.
+- Generated `src/main.js` must be directly browser-runnable from `build/index.html`. Do not use bare npm imports in generated game source. Use global `BABYLON` for Babylon.js projects and global `Phaser` for Phaser projects.
 
 ## Project Contract
 
@@ -70,11 +75,12 @@ When the user starts a request to generate a new game, run this sequence:
 
 3. **Generate the scene with image-blaster**
    - Do not use Claude Code to generate images even if image-blaster recommends it. Use Codex for any code generation related to image-blaster's asset generation, runtime, or viewer.
-   - Use image-blaster to create the primary 3D world or scene backdrop from the reference image.
+   - For Babylon.js 3D/HD2D games, use image-blaster to create the primary 3D world or scene backdrop from the reference image.
+   - For Phaser 2D games, skip image-blaster unless the user explicitly asks for 3D generated assets.
    - Save resulting scene/model assets under `assets/scenes/` or `assets/models/`.
-   - Use the runtime, viewer, framework, and file structure produced or recommended by image-blaster.
-   - Do not convert the scene into PlayCanvas unless image-blaster itself explicitly requires it.
-   - Load and instantiate the generated assets in the image-blaster-compatible runtime. Manifest-only generated assets are incomplete.
+   - Use Babylon.js as the underlying game engine and import image-blaster outputs as scene/model assets.
+   - Do not convert the scene into PlayCanvas.
+   - Load and instantiate the generated assets in a Babylon.js `Engine` and `Scene`. Manifest-only generated assets are incomplete.
 
 4. **Generate character emotion sprite sheets**
    - Use OpenAI Image 2 to generate one character with five 2D emotion sprite sheets.
@@ -86,10 +92,11 @@ When the user starts a request to generate a new game, run this sequence:
    - Load each sprite sheet as a texture and animate it from the 4x3 frame layout.
 
 5. **Overlay the sprite actor over the generated scene**
-   - Render the character as a 2D overlay layer on top of the image-blaster scene.
+   - For Babylon.js games, render the character as a 2D overlay layer on top of the Babylon.js scene.
+   - For Phaser games, render the character as Phaser sprites, sprite sheets, or scene/UI layers.
    - Use the current dialogue state to switch the visible emotion sheet.
-   - The character may be a screen-space HTML/CSS/canvas overlay, a transparent textured plane in the image-blaster runtime, or another overlay method that fits image-blaster's stack.
-   - Do not add PlayCanvas-specific billboards, entities, scripts, or primitive proxies unless image-blaster's own runtime uses PlayCanvas.
+   - The character may be a screen-space HTML/CSS/canvas overlay, a transparent textured plane in Babylon.js, Phaser sprite animation, or another overlay method that fits the selected runtime.
+   - Do not add PlayCanvas-specific billboards, entities, scripts, or primitive proxies.
 
 6. **Add bottom dialogue UI**
    - Add a dialogue interface anchored to the bottom of the game viewport.
@@ -108,7 +115,8 @@ When the user starts a request to generate a new game, run this sequence:
    - Produce or update `build/index.html`.
    - Do not start Python, `python -m http.server`, or any ad hoc preview server. Electron owns preview serving through its local Node/Electron bridge.
    - Validate that the Image 2 reference image exists and is the input used by image-blaster, unless the user supplied a reference image.
-   - Validate that generated 3D assets exist and are referenced by the image-blaster-compatible runtime code.
+   - For Babylon.js 3D/HD2D games, validate that generated 3D assets exist and are referenced by the Babylon.js runtime code.
+   - For Phaser 2D games, validate that Phaser scenes preload and visibly use generated/imported 2D assets.
    - Validate that all five emotion sprite sheets exist, are referenced by runtime code, and are visible through dialogue-state changes.
    - Validate that the bottom dialogue UI exposes a five-round decision tree.
    - Record validation in `runs/<timestamp>/validation.md`.
@@ -130,11 +138,14 @@ When the user starts a request to generate a new game, run this sequence:
 {
   "id": "project-slug",
   "title": "Project Title",
-  "style": "image-blaster",
+  "style": "babylonjs",
+  "engine": "babylonjs",
   "createdAt": "ISO timestamp",
   "updatedAt": "ISO timestamp",
   "workspacePath": "project-slug",
   "runtimeEntry": "src/main.js",
+  "babylonEntry": "src/main.js",
+  "phaserEntry": null,
   "buildPath": "project-slug/build/index.html",
   "promptHistory": [],
   "runHistory": [],
@@ -142,4 +153,4 @@ When the user starts a request to generate a new game, run this sequence:
 }
 ```
 
-Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`. Use `kind: "sprite"` for sprite sheets, `kind: "scene"` for generated scene outputs, and `kind: "model"` for generated model outputs. Existing app manifests may still include the legacy `playCanvasEntry` field for compatibility; do not interpret that as permission to use PlayCanvas for new generation.
+Each asset entry should include `id`, `name`, `kind`, `path`, `source`, `previewColor`, `usage`, and a short runtime usage note such as `usedBy` or `runtimeRefs`. Use `kind: "sprite"` for sprite sheets, `kind: "scene"` for generated scene outputs, and `kind: "model"` for generated model outputs. Existing app manifests may still include the legacy `playCanvasEntry` field for compatibility; migrate new writes to `runtimeEntry` plus `babylonEntry` or `phaserEntry`, and do not interpret that legacy field as permission to use PlayCanvas for new generation.
