@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld("gameSpark", {
   openPreviewInBrowser(url) {
     return ipcRenderer.invoke("preview:open-browser", url);
   },
+  openEditorPanelWindow(panelId) {
+    return ipcRenderer.invoke("editor:open-panel-window", panelId);
+  },
   startPreviewServer(projectId) {
     return ipcRenderer.invoke("preview:start-server", projectId);
   },

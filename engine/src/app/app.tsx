@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent } from "@dnd-kit/core";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import {
   createManifest,
   createMockRunEvents,
@@ -72,8 +76,49 @@ const capabilityGallery = [
   },
 ];
 
+type EditorPanelId = "navigator" | "assistant" | "preview";
+
+type EditorPanelLayout = {
+  id: EditorPanelId;
+  title: string;
+  port: string;
+};
+
+type EditorDockGroupId = "left" | "center" | "right";
+
+type EditorDockGroup = {
+  id: EditorDockGroupId;
+  title: string;
+  panelId: EditorPanelId | null;
+  activePanelId: EditorPanelId | null;
+  collapsed: boolean;
+};
+
+const editorPanelCatalog: Record<EditorPanelId, EditorPanelLayout> = {
+  navigator: { id: "navigator", title: "Project ports", port: "Tools / Assets / Settings" },
+  assistant: { id: "assistant", title: "AI co-editor", port: "Chat / Logic / Generation" },
+  preview: { id: "preview", title: "Runtime viewport", port: "Scene / Inspector / Playtest" },
+};
+
+const defaultDockGroups: EditorDockGroup[] = [
+  { id: "left", title: "Navigator", panelId: "navigator", activePanelId: "navigator", collapsed: false },
+  { id: "center", title: "AI workbench", panelId: "assistant", activePanelId: "assistant", collapsed: false },
+  { id: "right", title: "Runtime", panelId: "preview", activePanelId: "preview", collapsed: false },
+];
+
+const dockGroupDefaults: Record<EditorDockGroupId, Pick<EditorDockGroup, "id" | "title">> = {
+  left: { id: "left", title: "Navigator" },
+  center: { id: "center", title: "AI workbench" },
+  right: { id: "right", title: "Runtime" },
+};
+
 export default function App() {
   const [view, setView] = useState<"home" | "workspace">("home");
+  const panelWindowId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const panel = new URLSearchParams(window.location.search).get("panel");
+    return panel === "navigator" || panel === "assistant" || panel === "preview" ? panel : null;
+  }, []);
   const [promptBlocks, setPromptBlocks] = useState<PromptBlock[]>(defaultPromptBlocks);
   const [project, setProject] = useState<GameProjectManifest | null>(null);
   const [lastPreviewProject, setLastPreviewProject] = useState<GameProjectManifest | null>(null);
@@ -104,10 +149,11 @@ export default function App() {
   }, [project]);
 
   useEffect(() => {
+    if (panelWindowId) setView("workspace");
     window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
     window.gameSpark?.getSettings?.().then((settings) => setAgentEnv(settings.agentEnv)).catch(() => undefined);
     refreshWorkspaceProjects();
-  }, []);
+  }, [panelWindowId]);
 
   useEffect(() => {
     const offEvent = window.gameSpark?.onCodexEvent?.((event) => {
@@ -503,6 +549,7 @@ export default function App() {
               logInteraction("asset_selected", { assetId, projectId: project?.id });
               setSelectedAssetId(assetId);
             }}
+            panelWindowId={panelWindowId}
           />
         )}
       </div>
@@ -1063,6 +1110,7 @@ function Workspace({
   onApplyModeChange,
   onToolPrompt,
   onSelectAsset,
+  panelWindowId,
 }: {
   promptBlocks: PromptBlock[];
   project: GameProjectManifest | null;
@@ -1092,11 +1140,155 @@ function Workspace({
   onApplyModeChange: (mode: ApplyMode) => void;
   onToolPrompt: (toolId: EditorToolId, instruction: string) => void;
   onSelectAsset: (assetId: string) => void;
+  panelWindowId: EditorPanelId | null;
 }) {
   const readyToolCount = (project?.editor.tools ?? []).filter((tool) => tool.status === "ready").length;
   const totalToolCount = project?.editor.tools.length ?? createDefaultEditorState().tools.length;
   const assetCount = project?.assets.length ?? 0;
   const logicNodeCount = project?.logicGraph.nodes.length ?? 0;
+  const [dockGroups, setDockGroups] = useState<EditorDockGroup[]>(
+    panelWindowId
+      ? [{ id: "center", title: editorPanelCatalog[panelWindowId].title, panelId: panelWindowId, activePanelId: panelWindowId, collapsed: false }]
+      : defaultDockGroups,
+  );
+  const [draggedPanelId, setDraggedPanelId] = useState<EditorPanelId | null>(null);
+  const [dragTargetGroupId, setDragTargetGroupId] = useState<EditorDockGroupId | null>(null);
+  const dragTargetGroupIdRef = useRef<EditorDockGroupId | null>(null);
+  const dragPointerOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const dockSlotRectsRef = useRef<Array<{ id: EditorDockGroupId; left: number; right: number; top: number; bottom: number }>>([]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const previewDockGroups = draggedPanelId ? previewDockGroupsForDrag(dockGroups, draggedPanelId, dragTargetGroupId) : dockGroups;
+  const visibleDockGroups = dockGroups.filter((group) => !group.collapsed);
+  const previewGroupById = new Map(previewDockGroups.map((group) => [group.id, group]));
+  const dragSourceGroupId = draggedPanelId ? dockGroups.find((group) => group.panelId === draggedPanelId)?.id ?? null : null;
+
+  function updateDockGroup(groupId: EditorDockGroupId, patch: Partial<EditorDockGroup>) {
+    setDockGroups((current) => current.map((group) => (group.id === groupId ? { ...group, ...patch } : group)));
+  }
+
+  function activatePanel(panelId: EditorPanelId) {
+    setDockGroups((current) =>
+      current.map((group) => (group.panelId === panelId ? { ...group, activePanelId: panelId, collapsed: false } : group)),
+    );
+  }
+
+  function setDragTarget(nextTargetGroupId: EditorDockGroupId | null) {
+    if (dragTargetGroupIdRef.current === nextTargetGroupId) return;
+    dragTargetGroupIdRef.current = nextTargetGroupId;
+    setDragTargetGroupId(nextTargetGroupId);
+  }
+
+  function measureDockSlots() {
+    dockSlotRectsRef.current = Array.from(document.querySelectorAll<HTMLElement>("[data-dock-slot]")).map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        id: node.dataset.dockSlot as EditorDockGroupId,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+      };
+    });
+  }
+
+  function targetFromFrozenRects(point: { x: number; y: number }) {
+    return dockSlotRectsRef.current.find((rect) => point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom)?.id ?? null;
+  }
+
+  function handleDockDragStart(event: DragStartEvent) {
+    const draggedId = event.active.id as EditorPanelId;
+    setDraggedPanelId(draggedId);
+    measureDockSlots();
+
+    const sourceEvent = event.activatorEvent;
+    if ("clientX" in sourceEvent && "clientY" in sourceEvent) {
+      const origin = { x: Number(sourceEvent.clientX), y: Number(sourceEvent.clientY) };
+      dragPointerOriginRef.current = origin;
+      setDragTarget(targetFromFrozenRects(origin));
+    }
+  }
+
+  function handleDockDragMove(event: DragMoveEvent) {
+    const origin = dragPointerOriginRef.current;
+    if (!origin) return;
+    const point = {
+      x: origin.x + event.delta.x,
+      y: origin.y + event.delta.y,
+    };
+    const nextTargetGroupId = targetFromFrozenRects(point);
+    if (nextTargetGroupId) setDragTarget(nextTargetGroupId);
+  }
+
+  function handleDockDragEnd(event: DragEndEvent) {
+    const draggedId = event.active.id as EditorPanelId;
+    const targetGroupId = dragTargetGroupIdRef.current;
+    setDraggedPanelId(null);
+    setDragTarget(null);
+    dragPointerOriginRef.current = null;
+    dockSlotRectsRef.current = [];
+    if (!editorPanelCatalog[draggedId] || !targetGroupId) return;
+
+    setDockGroups((current) => reorderDockGroupsForPanel(current, draggedId, targetGroupId));
+    logInteraction("editor_panel_reordered", { draggedId, targetGroupId, projectId: project?.id });
+  }
+
+  function popOutPanel(panel: EditorPanelLayout) {
+    window.gameSpark?.openEditorPanelWindow?.(panel.id);
+    logInteraction("editor_panel_popped_out", { panelId: panel.id, projectId: project?.id });
+  }
+
+  function renderPanel(panel: EditorPanelLayout) {
+    if (panel.id === "navigator") {
+      return (
+        <NavigationPanel
+          project={project}
+          workspace={workspace}
+          assets={project?.assets ?? []}
+          selectedAssetId={selectedAssetId}
+          agentEnv={agentEnv}
+          settingsStatus={settingsStatus}
+          activeEditorTool={activeEditorTool}
+          onSelectAsset={onSelectAsset}
+          onSelectEditorTool={onSelectEditorTool}
+          onSelectWorkspace={onSelectWorkspace}
+          onResetWorkspace={onResetWorkspace}
+          onAddAgentEnv={onAddAgentEnv}
+          onUpdateAgentEnv={onUpdateAgentEnv}
+          onRemoveAgentEnv={onRemoveAgentEnv}
+          onSaveAgentEnv={onSaveAgentEnv}
+        />
+      );
+    }
+    if (panel.id === "assistant") {
+      return (
+        <AgentChat
+          promptBlocks={promptBlocks}
+          events={events}
+          phase={phase}
+          project={project}
+          selectedAsset={selectedAsset}
+          activeEditorTool={activeEditorTool}
+          applyMode={applyMode}
+          onApplyModeChange={onApplyModeChange}
+          onToolPrompt={onToolPrompt}
+          onDraftChange={onDraftChange}
+          onAddAttachment={onAddAttachment}
+          onIterate={onIterate}
+          onInterrupt={onInterrupt}
+        />
+      );
+    }
+    return (
+      <GamePreviewPanel
+        project={project}
+        previewProject={previewProject}
+        previewableProjectIds={previewableProjectIds}
+        phase={phase}
+        onRebuildSource={onRebuildSource}
+        logInteraction={logInteraction}
+      />
+    );
+  }
 
   return (
     <section className="workspace-view">
@@ -1109,47 +1301,252 @@ function Workspace({
         assetCount={assetCount}
         logicNodeCount={logicNodeCount}
       />
-      <NavigationPanel
-        project={project}
-        workspace={workspace}
-        assets={project?.assets ?? []}
-        selectedAssetId={selectedAssetId}
-        agentEnv={agentEnv}
-        settingsStatus={settingsStatus}
-        activeEditorTool={activeEditorTool}
-        onSelectAsset={onSelectAsset}
-        onSelectEditorTool={onSelectEditorTool}
-        onSelectWorkspace={onSelectWorkspace}
-        onResetWorkspace={onResetWorkspace}
-        onAddAgentEnv={onAddAgentEnv}
-        onUpdateAgentEnv={onUpdateAgentEnv}
-        onRemoveAgentEnv={onRemoveAgentEnv}
-        onSaveAgentEnv={onSaveAgentEnv}
-      />
-      <AgentChat
-        promptBlocks={promptBlocks}
-        events={events}
-        phase={phase}
-        project={project}
-        selectedAsset={selectedAsset}
-        activeEditorTool={activeEditorTool}
-        applyMode={applyMode}
-        onApplyModeChange={onApplyModeChange}
-        onToolPrompt={onToolPrompt}
-        onDraftChange={onDraftChange}
-        onAddAttachment={onAddAttachment}
-        onIterate={onIterate}
-        onInterrupt={onInterrupt}
-      />
-      <GamePreviewPanel
-        project={project}
-        previewProject={previewProject}
-        previewableProjectIds={previewableProjectIds}
-        phase={phase}
-        onRebuildSource={onRebuildSource}
-        logInteraction={logInteraction}
-      />
+      <div className="editor-layout-shell">
+        <div className="editor-layout-toolbar" aria-label="Editor layout controls">
+          <div>
+            <strong>{panelWindowId ? `${editorPanelCatalog[panelWindowId].title} popup` : "Docking layout"}</strong>
+            <span>{panelWindowId ? "Detached live editor panel." : "Drag tab handles between dock groups, resize nested panes, collapse views, or detach a module."}</span>
+          </div>
+          {!panelWindowId ? (
+            <div className="editor-layout-actions">
+              {dockGroups.map((group) => (
+                <button
+                  className={group.collapsed ? "" : "active"}
+                  key={group.id}
+                  type="button"
+                  onClick={() => updateDockGroup(group.id, { collapsed: !group.collapsed })}
+                >
+                  {group.title}
+                </button>
+              ))}
+              <button type="button" onClick={() => setDockGroups(defaultDockGroups)}>
+                Reset
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <DndContext
+          sensors={sensors}
+          onDragCancel={() => {
+            setDraggedPanelId(null);
+            setDragTarget(null);
+            dragPointerOriginRef.current = null;
+            dockSlotRectsRef.current = [];
+          }}
+          onDragEnd={handleDockDragEnd}
+          onDragMove={handleDockDragMove}
+          onDragStart={handleDockDragStart}
+        >
+          {visibleDockGroups.length ? (
+            <LayoutGroup id="editor-dock-layout">
+              <Group className="editor-dock-layout" orientation="horizontal" defaultLayout={{ left: 22, center: 33, right: 45 }} key={visibleDockGroups.map((group) => group.id).join("-")}>
+                <AnimatePresence initial={false}>
+                  {visibleDockGroups.map((slotGroup, index) => {
+                    const previewGroup = previewGroupById.get(slotGroup.id) ?? slotGroup;
+                    const panelKey = previewGroup.panelId ?? slotGroup.id;
+                    return (
+                    <Fragment key={panelKey}>
+                      <Panel
+                        className="editor-dock-panel"
+                        defaultSize={slotGroup.id === "left" ? 22 : slotGroup.id === "center" ? 33 : 45}
+                        id={slotGroup.id}
+                        minSize={18}
+                      >
+                        <motion.div className="editor-dock-motion-shell" layout transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}>
+                          <DockGroupView
+                            slotGroup={slotGroup}
+                            previewGroup={previewGroup}
+                            panels={editorPanelCatalog}
+                            committedGroup={slotGroup}
+                            dragSourceGroupId={dragSourceGroupId}
+                            dragTargetGroupId={dragTargetGroupId}
+                            draggedPanelId={draggedPanelId}
+                            onCollapse={() => updateDockGroup(slotGroup.id, { collapsed: true })}
+                            onPopOut={popOutPanel}
+                            renderPanel={renderPanel}
+                          />
+                        </motion.div>
+                      </Panel>
+                      {index < visibleDockGroups.length - 1 ? <Separator className="editor-resize-handle" /> : null}
+                    </Fragment>
+                    );
+                  })}
+                </AnimatePresence>
+              </Group>
+            </LayoutGroup>
+          ) : (
+            <div className="editor-empty-layout">
+              <strong>All views are collapsed</strong>
+              <button type="button" onClick={() => setDockGroups(defaultDockGroups)}>
+                Restore layout
+              </button>
+            </div>
+          )}
+          <DragOverlay>
+            {draggedPanelId ? (
+              <DockDragPreview panel={editorPanelCatalog[draggedPanelId]} />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
     </section>
+  );
+
+}
+
+function reorderDockGroupsForPanel(groups: EditorDockGroup[], panelId: EditorPanelId, targetGroupId: EditorDockGroupId) {
+  const sourceIndex = groups.findIndex((group) => group.panelId === panelId);
+  const targetIndex = groups.findIndex((group) => group.id === targetGroupId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return groups;
+
+  const panelOrder = groups.map((group) => group.panelId).filter(Boolean) as EditorPanelId[];
+  const [movedPanel] = panelOrder.splice(sourceIndex, 1);
+  panelOrder.splice(targetIndex, 0, movedPanel);
+
+  return groups.map((group, index) => {
+    const nextPanelId = panelOrder[index] ?? null;
+    return {
+      ...group,
+      panelId: nextPanelId,
+      activePanelId: nextPanelId,
+      collapsed: false,
+    };
+  });
+}
+
+function previewDockGroupsForDrag(groups: EditorDockGroup[], panelId: EditorPanelId, targetGroupId: EditorDockGroupId | null) {
+  if (!targetGroupId) {
+    return groups;
+  }
+
+  return reorderDockGroupsForPanel(groups, panelId, targetGroupId);
+}
+
+function DockGroupView({
+  slotGroup,
+  previewGroup,
+  panels,
+  committedGroup,
+  dragSourceGroupId,
+  dragTargetGroupId,
+  draggedPanelId,
+  onCollapse,
+  onPopOut,
+  renderPanel,
+}: {
+  slotGroup: EditorDockGroup;
+  previewGroup: EditorDockGroup;
+  panels: Record<EditorPanelId, EditorPanelLayout>;
+  committedGroup: EditorDockGroup | null;
+  dragSourceGroupId: EditorDockGroupId | null;
+  dragTargetGroupId: EditorDockGroupId | null;
+  draggedPanelId: EditorPanelId | null;
+  onCollapse: () => void;
+  onPopOut: (panel: EditorPanelLayout) => void;
+  renderPanel: (panel: EditorPanelLayout) => ReactNode;
+}) {
+  const activePanelId = previewGroup.panelId ?? previewGroup.activePanelId ?? null;
+  const activePanel = activePanelId ? panels[activePanelId] : null;
+  const committedPanel = committedGroup?.panelId ? panels[committedGroup.panelId] : null;
+  const isDragTarget = dragTargetGroupId === slotGroup.id;
+  const isDraggedPreviewSlot = Boolean(draggedPanelId && activePanel?.id === draggedPanelId);
+  const isSourceSlot = Boolean(draggedPanelId && activePanel?.id === draggedPanelId && committedPanel?.id === draggedPanelId && dragSourceGroupId === slotGroup.id);
+  const isShiftedSlot = Boolean(draggedPanelId && activePanelId && committedPanel?.id && activePanelId !== committedPanel.id && !isDraggedPreviewSlot);
+
+  return (
+    <section className={`editor-dock-group dock-${slotGroup.id} ${isDragTarget ? "drop-preview" : ""} ${isSourceSlot ? "source-blur" : ""}`} data-dock-slot={slotGroup.id}>
+      <header className="dock-group-header">
+        {activePanel ? <DockViewDragHandle panel={activePanel} /> : null}
+        <div>
+          <strong>{slotGroup.title}</strong>
+          <span>{activePanel?.port ?? "Drop a view here"}</span>
+        </div>
+        <div className="dock-group-actions">
+          {activePanel ? (
+            <button type="button" onClick={() => onPopOut(activePanel)}>
+              Pop out
+            </button>
+          ) : null}
+          <button type="button" onClick={onCollapse}>
+            Collapse
+          </button>
+        </div>
+      </header>
+      <div className={`dock-drop-preview ${isDragTarget ? "visible" : ""}`} aria-hidden={!isDragTarget}>
+        <strong>{isDraggedPreviewSlot ? "Release to place view" : "View will move out of this slot"}</strong>
+        <span>{isDraggedPreviewSlot ? "The dragged preview will expand into this region." : "This region is being pushed to its preview location."}</span>
+      </div>
+      <motion.div
+        className={`dock-panel-body ${!activePanel ? "empty" : ""} ${isDraggedPreviewSlot ? "source-blur" : ""} ${isShiftedSlot ? "shifted" : ""}`}
+        layout
+        layoutId={activePanel ? `dock-view-${activePanel.id}` : `dock-empty-${slotGroup.id}`}
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {activePanel ? renderPanel(activePanel) : <DockEmptySlot />}
+      </motion.div>
+    </section>
+  );
+}
+
+function DockDragPreview({ panel }: { panel: EditorPanelLayout }) {
+  return (
+    <div className={`dock-drag-preview-card preview-${panel.id}`}>
+      <header>
+        <span aria-hidden="true">::</span>
+        <strong>{panel.title}</strong>
+      </header>
+      <div className="dock-drag-preview-body">
+        {panel.id === "navigator" ? (
+          <>
+            <i />
+            <i />
+            <i />
+            <b />
+            <b />
+          </>
+        ) : panel.id === "assistant" ? (
+          <>
+            <i />
+            <b />
+            <b />
+            <em />
+          </>
+        ) : (
+          <>
+            <div className="preview-screen" />
+            <b />
+            <b />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DockEmptySlot() {
+  return (
+    <div className="dock-empty-slot">
+      <strong>Empty slot</strong>
+      <span>Drop a view here</span>
+    </div>
+  );
+}
+
+function DockViewDragHandle({ panel }: { panel: EditorPanelLayout }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: panel.id });
+
+  return (
+    <button
+      className={`dock-view-drag-handle ${isDragging ? "dragging" : ""}`}
+      ref={setNodeRef}
+      type="button"
+      {...attributes}
+      {...listeners}
+      aria-label={`Drag ${panel.title}`}
+      title="Drag view"
+    >
+      <span aria-hidden="true">::</span>
+    </button>
   );
 }
 

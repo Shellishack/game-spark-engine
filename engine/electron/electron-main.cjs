@@ -1292,6 +1292,37 @@ async function openPreviewWindow(_event, url) {
   return { ok: true };
 }
 
+async function openEditorPanelWindow(_event, panelId) {
+  const safePanelId = ["navigator", "assistant", "preview"].includes(panelId) ? panelId : "";
+  if (!safePanelId) {
+    return { ok: false, error: "Invalid editor panel." };
+  }
+
+  const panelWindow = new BrowserWindow({
+    width: safePanelId === "preview" ? 1280 : 980,
+    height: 820,
+    minWidth: 720,
+    minHeight: 560,
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#f8f5ff",
+    title: "Game Spark Editor Panel",
+    webPreferences: {
+      preload: path.join(__dirname, "electron-preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const panelQuery = `?panel=${encodeURIComponent(safePanelId)}`;
+  if (isDev) {
+    await panelWindow.loadURL(`http://127.0.0.1:5050/${panelQuery}`);
+  } else {
+    await panelWindow.loadFile(path.join(appRoot, "dist", "index.html"), { query: { panel: safePanelId } });
+  }
+  return { ok: true };
+}
+
 async function openPreviewInBrowser(_event, url) {
   if (typeof url !== "string" || !url.startsWith("http://127.0.0.1:")) {
     return { ok: false, error: "Invalid preview URL." };
@@ -1316,6 +1347,7 @@ ipcMain.handle("scene:read", readSceneFile);
 ipcMain.handle("scene:update-object", updateSceneObject);
 ipcMain.handle("preview:open-window", openPreviewWindow);
 ipcMain.handle("preview:open-browser", openPreviewInBrowser);
+ipcMain.handle("editor:open-panel-window", openEditorPanelWindow);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);

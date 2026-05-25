@@ -204,6 +204,7 @@ export type GameSparkBridge = {
   logInteraction?: (interaction: { type: string; payload?: Record<string, unknown> }) => Promise<{ ok: boolean; path?: string }>;
   openPreviewWindow?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   openPreviewInBrowser?: (url: string) => Promise<{ ok: boolean; error?: string }>;
+  openEditorPanelWindow?: (panelId: "navigator" | "assistant" | "preview") => Promise<{ ok: boolean; error?: string }>;
   startPreviewServer?: (projectId: string) => Promise<{ ok: boolean; url?: string; port?: number; error?: string }>;
   rebuildPreview?: (projectId: string) => Promise<{ ok: boolean; manifest?: GameProjectManifest; previewUrl?: string; error?: string }>;
   readSceneFile?: (projectId: string, scenePath?: string) => Promise<{ ok: boolean; scene?: SceneFile; path?: string; error?: string }>;
