@@ -26,10 +26,12 @@ export function GamePreviewPanel({
   const hasPreview = Boolean(effectivePreviewProject);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewMode, setPreviewMode] = useState<"edit" | "play">("edit");
+  const [viewportMode, setViewportMode] = useState<"game" | "scene" | "split" | "inspector">("game");
   const [playStartMode, setPlayStartMode] = useState<PlayStartMode>("fresh");
   const [scene, setScene] = useState<SceneFile | null>(null);
   const [selectedSceneObjectId, setSelectedSceneObjectId] = useState("");
   const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
+  const selectedSceneObject = scene?.objects.find((object) => object.id === selectedSceneObjectId) ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -112,32 +114,64 @@ export function GamePreviewPanel({
   return (
     <section className="panel viewport-panel">
       <div className="section-heading">
-        <h2>Game preview</h2>
-        <div className="preview-mode-tabs" aria-label="Preview mode">
-          <button className={previewMode === "edit" ? "active" : ""} type="button" disabled={!hasPreview} onClick={stopPlay}>
-            Edit
-          </button>
-          <button className={previewMode === "play" ? "active" : ""} type="button" disabled={!hasPreview} onClick={() => startPlay("fresh")}>
-            Play
-          </button>
+        <div>
+          <p className="eyebrow">Viewport</p>
+          <h2>Game preview</h2>
+        </div>
+        <div className="viewport-toolbar">
+          <div className="preview-mode-tabs" aria-label="Viewport panels">
+            {(["game", "scene", "split", "inspector"] as const).map((mode) => (
+              <button
+                className={viewportMode === mode ? "active" : ""}
+                key={mode}
+                type="button"
+                disabled={!hasPreview && mode !== "game"}
+                onClick={() => {
+                  setViewportMode(mode);
+                  logInteraction("viewport_mode_changed", { projectId: effectivePreviewProject?.id, viewportMode: mode });
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+          <div className="preview-mode-tabs" aria-label="Preview mode">
+            <button className={previewMode === "edit" ? "active" : ""} type="button" disabled={!hasPreview} onClick={stopPlay}>
+              Edit
+            </button>
+            <button className={previewMode === "play" ? "active" : ""} type="button" disabled={!hasPreview} onClick={() => startPlay("fresh")}>
+              Play
+            </button>
+          </div>
         </div>
       </div>
-      <div className="viewport-stage">
-        {effectivePreviewProject && previewFrameUrl ? <iframe className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
-        {effectivePreviewProject && previewMode === "edit" && scene ? (
-          <SceneEditOverlay scene={scene} selectedObjectId={selectedSceneObjectId} onSelect={setSelectedSceneObjectId} onMove={moveSceneObject} />
-        ) : null}
-        {!effectivePreviewProject || !previewUrl ? (
-          <div className="preview-empty-state">
-            {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
-            <strong>{effectivePreviewProject ? "Starting preview server" : isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
-            <p>{effectivePreviewProject ? "Preparing a browser-openable localhost preview." : isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
+      <div className={`viewport-workbench viewport-${viewportMode}`}>
+        <div className="viewport-stage">
+          {effectivePreviewProject && previewFrameUrl ? <iframe className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} /> : null}
+          {effectivePreviewProject && previewMode === "edit" && scene ? (
+            <SceneEditOverlay scene={scene} selectedObjectId={selectedSceneObjectId} onSelect={setSelectedSceneObjectId} onMove={moveSceneObject} />
+          ) : null}
+          {!effectivePreviewProject || !previewUrl ? (
+            <div className="preview-empty-state">
+              {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
+              <strong>{effectivePreviewProject ? "Starting preview server" : isWorking ? "Generating preview" : "Generate a game to preview"}</strong>
+              <p>{effectivePreviewProject ? "Preparing a browser-openable localhost preview." : isWorking ? "The first playable preview will appear here when the agent finishes." : "Start a game generation or open a playable project."}</p>
+            </div>
+          ) : null}
+          <div className="viewport-hud">
+            <span>{previewMode === "edit" ? "Editing scene" : playStartMode === "fresh" ? "Playing from start" : "Playing from current"}</span>
+            <span>{previewStatus}</span>
           </div>
-        ) : null}
-        <div className="viewport-hud">
-          <span>{previewMode === "edit" ? "Editing scene" : playStartMode === "fresh" ? "Playing from start" : "Playing from current"}</span>
-          <span>{previewStatus}</span>
         </div>
+        {viewportMode !== "game" ? (
+          <ViewportInspector
+            scene={scene}
+            selectedObject={selectedSceneObject}
+            previewMode={previewMode}
+            onSelect={setSelectedSceneObjectId}
+            onMove={moveSceneObject}
+          />
+        ) : null}
       </div>
       <div className="control-bar">
         <button type="button" disabled={!hasPreview} onClick={() => startPlay("fresh")}>
@@ -227,5 +261,99 @@ function SceneEditOverlay({
           </button>
         ))}
     </div>
+  );
+}
+
+function ViewportInspector({
+  scene,
+  selectedObject,
+  previewMode,
+  onSelect,
+  onMove,
+}: {
+  scene: SceneFile | null;
+  selectedObject: SceneObject | null;
+  previewMode: "edit" | "play";
+  onSelect: (objectId: string) => void;
+  onMove: (object: SceneObject, x: number, y: number) => void;
+}) {
+  const editableObjects = scene?.objects.filter((object) => object.editable) ?? [];
+
+  return (
+    <aside className="viewport-inspector" aria-label="Scene inspector">
+      <div className="inspector-block">
+        <div className="inspector-heading">
+          <span>Scene outliner</span>
+          <small>{editableObjects.length}</small>
+        </div>
+        <div className="scene-object-list">
+          {editableObjects.length ? (
+            editableObjects.map((object) => (
+              <button
+                className={object.id === selectedObject?.id ? "selected" : ""}
+                key={object.id}
+                type="button"
+                onClick={() => onSelect(object.id)}
+              >
+                <strong>{object.name}</strong>
+                <span>
+                  x {Math.round(object.transform.x)} / y {Math.round(object.transform.y)}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p>No editable scene objects loaded.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="inspector-block">
+        <div className="inspector-heading">
+          <span>Inspector</span>
+          <small>{previewMode}</small>
+        </div>
+        {selectedObject ? (
+          <div className="transform-grid">
+            <label>
+              <span>X</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(selectedObject.transform.x)}
+                disabled={previewMode === "play"}
+                onChange={(event) => onMove(selectedObject, Number(event.target.value), selectedObject.transform.y)}
+              />
+            </label>
+            <label>
+              <span>Y</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(selectedObject.transform.y)}
+                disabled={previewMode === "play"}
+                onChange={(event) => onMove(selectedObject, selectedObject.transform.x, Number(event.target.value))}
+              />
+            </label>
+          </div>
+        ) : (
+          <p>Select an editable scene object to inspect transforms.</p>
+        )}
+      </div>
+
+      <div className="inspector-block">
+        <div className="inspector-heading">
+          <span>Ports</span>
+          <small>live</small>
+        </div>
+        <div className="port-list">
+          <span>Game viewport</span>
+          <span>Scene overlay</span>
+          <span>Object inspector</span>
+          <span>Playtest runtime</span>
+        </div>
+      </div>
+    </aside>
   );
 }

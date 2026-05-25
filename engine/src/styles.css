@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap");
 
 :root {
   --primary: #49b6e5;
@@ -257,12 +257,18 @@ pre {
   width: 100%;
   height: 100%;
   margin: 0 auto;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   align-content: start;
   justify-items: center;
-  gap: 2.4rem;
+  gap: 2rem;
   overflow: auto;
-  padding: 2rem 2rem 2rem;
+  padding: 1.5rem 2rem 3rem;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(210, 92, 255, 0.24), transparent 30%),
+    radial-gradient(circle at 86% 8%, rgba(255, 93, 168, 0.22), transparent 28%),
+    linear-gradient(135deg, #fff7fb 0%, #f8f0ff 42%, #fff 100%);
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .home-hub-grid {
@@ -272,6 +278,20 @@ pre {
   gap: 1.35rem;
   align-items: start;
   margin-bottom: 6rem;
+}
+
+.home-view button {
+  border: 1px solid rgba(92, 42, 124, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 18px 45px rgba(92, 42, 124, 0.12);
+  font-weight: 700;
+  transform: none;
+}
+
+.home-view button:hover:not(:disabled) {
+  background: #fff;
+  box-shadow: 0 22px 58px rgba(161, 45, 142, 0.2);
+  transform: translateY(-2px);
 }
 
 .home-main-column,
@@ -299,12 +319,13 @@ pre {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 1rem;
-  border: 3px solid var(--line);
-  border-radius: 22px 18px 24px 16px;
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 28px;
   padding: 0.85rem;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  transform: rotate(-0.2deg);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 24px 80px rgba(92, 42, 124, 0.14);
+  backdrop-filter: blur(18px);
+  transform: none;
 }
 
 .home-brand,
@@ -325,15 +346,15 @@ pre {
   height: 46px;
   flex: 0 0 auto;
   place-items: center;
-  border: 3px solid var(--line);
-  border-radius: 16px 20px 14px 22px;
-  background: var(--yellow);
-  box-shadow: var(--shadow-sm);
-  color: var(--secondary);
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  box-shadow: 0 14px 30px rgba(124, 58, 237, 0.28);
+  color: #fff;
   font-family: "JetBrains Mono", monospace;
   font-size: 0.78rem;
   font-weight: 900;
-  transform: rotate(-2deg);
+  transform: none;
 }
 
 .brand-copy {
@@ -347,25 +368,26 @@ pre {
 
 .home-tabs button {
   min-height: 42px;
-  border: 3px solid var(--line);
-  border-radius: 16px 12px 18px 14px;
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 999px;
   padding: 0 1rem;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  color: var(--secondary);
-  font-weight: 900;
-  transform: rotate(-1deg);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  color: #472050;
+  font-weight: 700;
+  transform: none;
 }
 
 .home-tabs button:nth-child(2) {
-  transform: rotate(1deg);
+  transform: none;
 }
 
 .home-tabs button.active,
 .home-tabs button:hover:not(:disabled) {
-  background: var(--primary);
-  box-shadow: 7px 8px 0 var(--line);
-  transform: translate(-2px, -2px) rotate(-1deg);
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  box-shadow: 0 16px 38px rgba(124, 58, 237, 0.26);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .home-top-actions {
@@ -374,20 +396,20 @@ pre {
 
 .brand-row h1 {
   margin-bottom: 0.25rem;
-  color: var(--secondary);
-  font-size: 1.75rem;
+  color: #201426;
+  font-size: 1.85rem;
+  font-weight: 800;
   line-height: 1;
 }
 
 .headline-carousel {
   height: 1.55rem;
   overflow: hidden;
-  color: var(--muted);
-  font-family: "JetBrains Mono", monospace;
+  color: #6d5878;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 0.9rem;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.55rem;
-  text-transform: uppercase;
 }
 
 .headline-carousel div {
@@ -449,6 +471,345 @@ pre {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.78rem;
   font-weight: 900;
+}
+
+.home-view .status-pill,
+.home-view .section-heading span {
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  color: #6f3a78;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.capability-section {
+  display: grid;
+  width: min(100%, 1480px);
+  gap: 1.4rem;
+}
+
+.capability-section-copy {
+  display: grid;
+  max-width: 780px;
+  gap: 0.65rem;
+  padding: 2.2rem 0 0.5rem;
+}
+
+.capability-section-copy h2 {
+  margin: 0;
+  color: #201426;
+  font-size: clamp(2.4rem, 5vw, 5.5rem);
+  font-weight: 800;
+  line-height: 0.95;
+}
+
+.capability-section-copy p {
+  max-width: 62ch;
+  margin: 0;
+  color: #6d5878;
+  font-size: 1.08rem;
+}
+
+.capability-gallery {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: 240px;
+  gap: 1rem;
+}
+
+.capability-card {
+  position: relative;
+  display: grid;
+  align-items: end;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 32px;
+  background: #1c1022;
+  box-shadow: 0 30px 90px rgba(92, 42, 124, 0.18);
+  isolation: isolate;
+}
+
+.capability-card::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, transparent 34%, rgba(20, 10, 25, 0.82));
+  content: "";
+}
+
+.capability-card img {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 280ms ease;
+}
+
+.capability-card:hover img {
+  transform: scale(1.04);
+}
+
+.capability-card div {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1.15rem;
+}
+
+.capability-card span {
+  width: fit-content;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 0.32rem 0.62rem;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+}
+
+.capability-card h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.capability-card p {
+  max-width: 42ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.94rem;
+  line-height: 1.4;
+}
+
+.capability-card-1,
+.capability-card-4 {
+  grid-column: span 3;
+}
+
+.capability-card-2,
+.capability-card-3 {
+  grid-column: span 3;
+}
+
+.home-view .composer,
+.home-view .existing-projects-band,
+.home-view .random-idea-band,
+.home-view .template-band {
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 24px 80px rgba(92, 42, 124, 0.13);
+  transform: none;
+}
+
+.home-view .composer::after,
+.home-view .brand-row::after {
+  display: none;
+}
+
+.home-view .eyebrow,
+.home-view .project-name-field span,
+.home-view .composer-left-tools span,
+.home-view .template-card small,
+.home-view .support-inline span,
+.home-view .support-inline small,
+.home-view .composer-workspace-picker h2,
+.home-view .composer-workspace-picker p,
+.home-view .project-card-meta span {
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.home-view .composer-project-row {
+  border-bottom: 1px solid rgba(92, 42, 124, 0.12);
+}
+
+.home-view .project-name-field,
+.home-view .workspace-picker.compact.composer-workspace-picker,
+.home-view .composer-left-tools select,
+.home-view .composer textarea,
+.home-view .attachment,
+.home-view .template-card,
+.home-view .random-idea-card,
+.home-view .existing-project-card {
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  transform: none;
+}
+
+.home-view .project-name-field,
+.home-view .workspace-picker.compact.composer-workspace-picker {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.home-view .project-name-field:hover,
+.home-view .workspace-picker.compact.composer-workspace-picker:hover,
+.home-view .template-card:hover,
+.home-view .random-idea-card:hover,
+.home-view .existing-project-card:hover {
+  background: #fff;
+  box-shadow: 0 22px 58px rgba(161, 45, 142, 0.14);
+  transform: translateY(-2px);
+}
+
+.home-view .project-name-field span,
+.home-view .composer-left-tools span,
+.home-view .composer-workspace-picker h2 {
+  color: #7c4a86;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.home-view .project-name-field input,
+.home-view .composer-left-tools select,
+.home-view .composer-workspace-picker p {
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.home-view .composer textarea {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 245, 252, 0.82)),
+    #fff;
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.02rem;
+}
+
+.home-view .project-name-field input:focus,
+.home-view .composer-left-tools select:focus,
+.home-view .composer textarea:focus {
+  outline: 3px solid rgba(236, 72, 153, 0.28);
+  outline-offset: 3px;
+}
+
+.home-view .composer-left-tools select {
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: none;
+}
+
+.home-view .composer-right-tools button:last-child,
+.home-view .random-idea-actions button:last-child,
+.home-view .existing-project-card button {
+  border: 0;
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  color: #fff;
+  box-shadow: 0 18px 42px rgba(124, 58, 237, 0.24);
+}
+
+.home-view .existing-project-card button:hover:not(:disabled),
+.home-view .composer-right-tools button:last-child:hover:not(:disabled),
+.home-view .random-idea-actions button:last-child:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6d28d9, #db2777);
+  color: #fff;
+  box-shadow: 0 22px 52px rgba(124, 58, 237, 0.3);
+}
+
+.home-view .secondary-button,
+.home-view .ghost-button,
+.home-view .random-idea-actions button:first-child {
+  background: rgba(255, 255, 255, 0.76);
+  color: #5f2b68;
+}
+
+.home-view .existing-project-card {
+  min-height: 252px;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.home-view .existing-project-card:nth-child(2n),
+.home-view .existing-project-card:nth-child(3n),
+.home-view .template-card:nth-child(2n),
+.home-view .random-idea-thumb {
+  transform: none;
+}
+
+.home-view .existing-project-thumb,
+.home-view .template-icon,
+.home-view .random-idea-thumb {
+  border: 0;
+  border-radius: 22px;
+  box-shadow: none;
+}
+
+.home-view .existing-project-thumb {
+  height: 132px;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255, 255, 255, 0.55), transparent 30%),
+    linear-gradient(135deg, #7c3aed, #ec4899);
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.home-view .existing-project-card h3,
+.home-view .template-card h3,
+.home-view .random-idea-card h3,
+.home-view .existing-projects-band .section-heading h2,
+.home-view .random-idea-band .section-heading h2 {
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+}
+
+.home-view .existing-project-card p,
+.home-view .template-card p,
+.home-view .random-idea-card p,
+.home-view .workspace-picker p {
+  color: #6d5878;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.home-view .project-card-meta span,
+.home-view .support-inline small,
+.home-view .template-card small {
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 999px;
+  background: rgba(250, 238, 255, 0.86);
+  color: #7c3a83;
+  font-weight: 700;
+}
+
+.home-view .template-band,
+.home-view .random-idea-band,
+.home-view .existing-projects-band {
+  padding: 1.1rem;
+}
+
+.home-view .template-pagination,
+.home-view .support-inline {
+  border-top: 1px solid rgba(92, 42, 124, 0.12);
+}
+
+.home-view .template-icon {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(236, 72, 153, 0.18));
+  color: #7c3aed;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.home-view .template-card:nth-child(2n) .template-icon,
+.home-view .template-card:nth-child(3n) .template-icon {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(236, 72, 153, 0.18));
+}
+
+.home-view .template-pagination span {
+  border: 0;
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.home-view .template-pagination span.active {
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
 }
 
 .composer {
@@ -1005,6 +1366,182 @@ pre {
 
 .support-inline small:nth-of-type(3n) {
   background: var(--primary-soft);
+}
+
+.home-view .composer-project-row {
+  border-bottom: 1px solid rgba(92, 42, 124, 0.12);
+}
+
+.home-view .project-name-field,
+.home-view .workspace-picker.compact.composer-workspace-picker,
+.home-view .composer-left-tools select,
+.home-view .composer textarea,
+.home-view .attachment,
+.home-view .template-card,
+.home-view .random-idea-card,
+.home-view .existing-project-card {
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  transform: none;
+}
+
+.home-view .project-name-field:hover,
+.home-view .workspace-picker.compact.composer-workspace-picker:hover,
+.home-view .template-card:hover,
+.home-view .random-idea-card:hover,
+.home-view .existing-project-card:hover {
+  background: #fff;
+  box-shadow: 0 22px 58px rgba(161, 45, 142, 0.14);
+  transform: translateY(-2px);
+}
+
+.home-view .project-name-field span,
+.home-view .composer-left-tools span,
+.home-view .composer-workspace-picker h2,
+.home-view .template-card small,
+.home-view .support-inline span,
+.home-view .support-inline small,
+.home-view .project-card-meta span {
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.home-view .project-name-field span,
+.home-view .composer-left-tools span,
+.home-view .composer-workspace-picker h2 {
+  color: #7c4a86;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.home-view .project-name-field input,
+.home-view .composer-left-tools select,
+.home-view .composer-workspace-picker p {
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.home-view .composer textarea {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 245, 252, 0.82)),
+    #fff;
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.02rem;
+}
+
+.home-view .project-name-field input:focus,
+.home-view .composer-left-tools select:focus,
+.home-view .composer textarea:focus {
+  outline: 3px solid rgba(236, 72, 153, 0.28);
+  outline-offset: 3px;
+}
+
+.home-view .composer-left-tools select {
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: none;
+}
+
+.home-view .composer-right-tools button:last-child,
+.home-view .random-idea-actions button:last-child,
+.home-view .existing-project-card button {
+  border: 0;
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  color: #fff;
+  box-shadow: 0 18px 42px rgba(124, 58, 237, 0.24);
+}
+
+.home-view .secondary-button,
+.home-view .ghost-button,
+.home-view .random-idea-actions button:first-child {
+  background: rgba(255, 255, 255, 0.76);
+  color: #5f2b68;
+}
+
+.home-view .existing-project-card:nth-child(2n),
+.home-view .existing-project-card:nth-child(3n),
+.home-view .template-card:nth-child(2n),
+.home-view .random-idea-thumb {
+  transform: none;
+}
+
+.home-view .existing-project-thumb,
+.home-view .template-icon,
+.home-view .random-idea-thumb {
+  border: 0;
+  border-radius: 22px;
+  box-shadow: none;
+}
+
+.home-view .existing-project-thumb {
+  height: 132px;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255, 255, 255, 0.55), transparent 30%),
+    linear-gradient(135deg, #7c3aed, #ec4899);
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.home-view .existing-project-card h3,
+.home-view .template-card h3,
+.home-view .random-idea-card h3,
+.home-view .existing-projects-band .section-heading h2,
+.home-view .random-idea-band .section-heading h2 {
+  color: #201426;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+}
+
+.home-view .existing-project-card p,
+.home-view .template-card p,
+.home-view .random-idea-card p,
+.home-view .workspace-picker p {
+  color: #6d5878;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.home-view .project-card-meta span,
+.home-view .support-inline small,
+.home-view .template-card small {
+  border: 1px solid rgba(92, 42, 124, 0.14);
+  border-radius: 999px;
+  background: rgba(250, 238, 255, 0.86);
+  color: #7c3a83;
+  font-weight: 700;
+}
+
+.home-view .template-band,
+.home-view .random-idea-band,
+.home-view .existing-projects-band {
+  padding: 1.1rem;
+}
+
+.home-view .template-pagination,
+.home-view .support-inline {
+  border-top: 1px solid rgba(92, 42, 124, 0.12);
+}
+
+.home-view .template-icon,
+.home-view .template-card:nth-child(2n) .template-icon,
+.home-view .template-card:nth-child(3n) .template-icon {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(236, 72, 153, 0.18));
+  color: #7c3aed;
+  font-family: Jost, Inter, ui-sans-serif, system-ui, sans-serif;
+  transform: none;
+}
+
+.home-view .template-pagination span {
+  border: 0;
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.home-view .template-pagination span.active {
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
 }
 
 .workspace-picker {
@@ -1965,10 +2502,33 @@ pre {
   background: var(--yellow);
 }
 
+.viewport-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.viewport-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.8rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.viewport-workbench.viewport-scene,
+.viewport-workbench.viewport-inspector {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.34fr);
+}
+
+.viewport-workbench.viewport-split {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.48fr);
+}
+
 .viewport-stage {
   position: relative;
   min-height: 0;
-  flex: 1;
   overflow: hidden;
   border: 3px solid var(--line);
   border-radius: 28px 18px 32px 20px;
@@ -2077,6 +2637,131 @@ pre {
   border-top-color: var(--primary);
   border-radius: 999px;
   animation: previewSpin 850ms linear infinite;
+}
+
+.viewport-inspector {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 3px solid var(--line);
+  border-radius: var(--radius-a);
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-sm);
+}
+
+.inspector-block {
+  display: grid;
+  gap: 0.55rem;
+  border-bottom: 3px dashed var(--line);
+  padding-bottom: 0.75rem;
+}
+
+.inspector-block:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: var(--secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.inspector-heading small {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 0.18rem 0.42rem;
+  background: var(--yellow);
+}
+
+.scene-object-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.scene-object-list button {
+  display: grid;
+  gap: 0.16rem;
+  width: 100%;
+  border-radius: var(--radius-c);
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.scene-object-list button.selected {
+  background: var(--primary-soft);
+}
+
+.scene-object-list strong,
+.scene-object-list span,
+.viewport-inspector p {
+  overflow-wrap: anywhere;
+}
+
+.scene-object-list strong {
+  font-size: 0.82rem;
+}
+
+.scene-object-list span,
+.viewport-inspector p,
+.port-list span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.transform-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.transform-grid label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.transform-grid label span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.transform-grid input {
+  width: 100%;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 0.45rem;
+  background: var(--paper);
+  color: var(--secondary);
+  font-weight: 800;
+}
+
+.port-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.port-list span {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 0.36rem 0.5rem;
+  background: var(--paper);
+  color: var(--secondary);
+  font-weight: 800;
+  text-align: center;
 }
 
 .fallback-stage {
@@ -2393,6 +3078,17 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .capability-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capability-card-1,
+  .capability-card-2,
+  .capability-card-3,
+  .capability-card-4 {
+    grid-column: span 1;
+  }
+
   .existing-project-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2423,6 +3119,12 @@ pre {
   .viewport-panel {
     height: auto;
   }
+
+  .viewport-workbench.viewport-scene,
+  .viewport-workbench.viewport-inspector,
+  .viewport-workbench.viewport-split {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2437,6 +3139,11 @@ pre {
   .control-bar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .capability-gallery {
+    grid-template-columns: 1fr;
+    grid-auto-rows: 300px;
   }
 
   .brand-row {

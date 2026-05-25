@@ -9,6 +9,10 @@ import {
   spriteEmotions,
 } from "../data/codex-pipeline";
 import { buildPromptFromTemplate, gameCreationTemplates, templateSupportsPhaser } from "../data/game-templates";
+import capability2dGameUrl from "../assets/capability-2d-game.png";
+import capability3dGameUrl from "../assets/capability-3d-game.png";
+import capability3dRenderingUrl from "../assets/capability-3d-rendering.png";
+import capabilityAssetsGenerationUrl from "../assets/capability-assets-generation.png";
 import shuffleIdeaAtlasUrl from "../assets/shuffle-idea-atlas.png";
 import { phaseLabels, randomGameIdeas, supportedEngines, supportedGameTypes, supportedStyles } from "./app-constants";
 import {
@@ -40,6 +44,33 @@ import type {
   WorkspaceInfo,
   WorkspaceProjectSummary,
 } from "../types/project-types";
+
+const capabilityGallery = [
+  {
+    title: "2D games",
+    eyebrow: "Phaser or Babylon",
+    description: "Generate sprite-driven worlds, platformers, arcade loops, HUDs, and animation-ready 2D scenes.",
+    imageUrl: capability2dGameUrl,
+  },
+  {
+    title: "3D games",
+    eyebrow: "BabylonJS runtime",
+    description: "Build playable 3D worlds with characters, cameras, interaction logic, and real-time preview.",
+    imageUrl: capability3dGameUrl,
+  },
+  {
+    title: "3D rendering",
+    eyebrow: "Realtime visuals",
+    description: "Preview lighting, materials, scene composition, and cinematic shots directly inside the engine workspace.",
+    imageUrl: capability3dRenderingUrl,
+  },
+  {
+    title: "Asset generation",
+    eyebrow: "AI production loop",
+    description: "Create game-ready characters, props, sprites, textures, and style variants from chat-led tools.",
+    imageUrl: capabilityAssetsGenerationUrl,
+  },
+];
 
 export default function App() {
   const [view, setView] = useState<"home" | "workspace">("home");
@@ -762,6 +793,8 @@ function Home(
         </div>
       </div>
 
+      <CapabilityGallery />
+
       <div className="home-hub-grid" id="home-hub">
         <div className="home-main-column">
           <PromptComposer
@@ -792,6 +825,33 @@ function Home(
           <RandomIdeas onPickIdea={props.onProjectNameChange} onDraftChange={props.onDraftChange} onStartIdea={props.onStartIdea} />
           <SupportedTypes />
         </aside>
+      </div>
+    </section>
+  );
+}
+
+function CapabilityGallery() {
+  return (
+    <section className="capability-section" aria-label="Game engine capabilities">
+      <div className="capability-section-copy">
+        <p className="eyebrow">AI-native game engine</p>
+        <h2>Design, generate, edit, and playtest from one canvas.</h2>
+        <p>
+          Game Spark AI combines chat-led production tools with live engine previews so ideas can move from concept to playable
+          scenes without leaving the editor.
+        </p>
+      </div>
+      <div className="capability-gallery">
+        {capabilityGallery.map((item, index) => (
+          <article className={`capability-card capability-card-${index + 1}`} key={item.title}>
+            <img src={item.imageUrl} alt="" />
+            <div>
+              <span>{item.eyebrow}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );
