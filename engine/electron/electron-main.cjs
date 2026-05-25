@@ -1,16 +1,27 @@
-const { BrowserWindow, app, dialog, ipcMain, protocol, shell } = require("electron");
+const { BrowserWindow, app, dialog, ipcMain, protocol } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
-const fssync = require("node:fs");
-const http = require("node:http");
 const path = require("node:path");
+const { createProjectPreviewService } = require("./project-preview-service.cjs");
+const { WindowService } = require("./window-service.cjs");
 
 const isDev = !app.isPackaged;
 const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
+const windowService = new WindowService({
+  appRoot,
+  isDev,
+  preloadPath: path.join(__dirname, "electron-preload.cjs"),
+  devServerUrl: "http://127.0.0.1:5050",
+});
+const projectPreviewService = createProjectPreviewService({
+  app,
+  appRoot,
+  workspaceRoot,
+  sanitizeFilePart,
+});
 let activeCodexChild = null;
 const interactionLogSessions = new Map();
-const previewServers = new Map();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -191,488 +202,6 @@ async function getWorkspaceInfo() {
     path: await workspaceRoot(),
     defaultPath: defaultWorkspaceRoot(),
   };
-}
-
-async function startPreviewServer(_event, projectId) {
-  if (typeof projectId !== "string" || !projectId.trim()) {
-    return { ok: false, error: "Missing project id." };
-  }
-
-  const safeProjectId = sanitizeFilePart(projectId, "");
-  if (!safeProjectId || safeProjectId !== projectId) {
-    return { ok: false, error: "Invalid project id." };
-  }
-
-  const root = await workspaceRoot();
-  const projectRoot = path.resolve(root, safeProjectId);
-  const indexPath = path.join(projectRoot, "build", "index.html");
-  if (!(await fileExists(indexPath))) {
-    return { ok: false, error: "Playable preview is not ready." };
-  }
-
-  const existing = previewServers.get(safeProjectId);
-  if (existing) {
-    return { ok: true, url: existing.url, port: existing.port };
-  }
-
-  const server = http.createServer((request, response) => {
-    const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
-    const rawPath = decodeURIComponent(requestUrl.pathname === "/" ? "/build/index.html" : requestUrl.pathname);
-    const relativePath = rawPath.replace(/^\/+/, "");
-    const filePath = path.resolve(projectRoot, relativePath);
-
-    if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
-      response.writeHead(403);
-      response.end("Forbidden");
-      return;
-    }
-
-    serveProjectFile(projectRoot, filePath, relativePath, response);
-  });
-
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  const url = `http://127.0.0.1:${port}/build/index.html`;
-  previewServers.set(safeProjectId, { server, url, port });
-  return { ok: true, url, port };
-}
-
-function serveProjectFile(projectRoot, filePath, relativePath, response) {
-  fssync.stat(filePath, (statError, stat) => {
-    if (statError || !stat.isFile()) {
-      const assetFallback = resolveBuildAssetFallback(projectRoot, relativePath);
-      if (assetFallback) {
-        fssync.stat(assetFallback, (fallbackError, fallbackStat) => {
-          if (fallbackError || !fallbackStat.isFile()) {
-            response.writeHead(404);
-            response.end("Not found");
-            return;
-          }
-          response.writeHead(200, { "Content-Type": contentTypeFor(assetFallback) });
-          fssync.createReadStream(assetFallback).pipe(response);
-        });
-        return;
-      }
-
-      if (statError || !stat.isFile()) {
-        response.writeHead(404);
-        response.end("Not found");
-        return;
-      }
-    }
-
-    response.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
-    fssync.createReadStream(filePath).pipe(response);
-  });
-}
-
-function resolveBuildAssetFallback(projectRoot, relativePath) {
-  const normalized = relativePath.replace(/\\/g, "/");
-  if (!normalized.startsWith("build/assets/")) return "";
-
-  const assetRelativePath = normalized.slice("build/".length);
-  const fallbackPath = path.resolve(projectRoot, assetRelativePath);
-  if (!fallbackPath.startsWith(projectRoot + path.sep)) return "";
-  return fallbackPath;
-}
-
-async function rebuildProjectPreview(_event, projectId) {
-  if (typeof projectId !== "string" || !projectId.trim()) {
-    return { ok: false, error: "Missing project id." };
-  }
-
-  const safeProjectId = sanitizeFilePart(projectId, "");
-  if (!safeProjectId || safeProjectId !== projectId) {
-    return { ok: false, error: "Invalid project id." };
-  }
-
-  const root = await workspaceRoot();
-  const projectRoot = path.resolve(root, safeProjectId);
-  const sourcePath = path.join(projectRoot, "src", "main.js");
-  const sourceHtmlPath = path.join(projectRoot, "build", "index.html");
-
-  if (!(await fileExists(sourcePath))) {
-    return { ok: false, error: "Game source is missing." };
-  }
-
-  const tempRoot = path.join(app.getPath("temp"), "game-spark-ai", `rebuild-${safeProjectId}-${Date.now()}`);
-  const tempBuild = path.join(tempRoot, "build");
-  const finalBuild = path.join(projectRoot, "build");
-  const backupBuild = path.join(projectRoot, `.build-backup-${Date.now()}`);
-
-  try {
-    await fs.mkdir(tempBuild, { recursive: true });
-    const source = rewriteSourceForBuild(await fs.readFile(sourcePath, "utf8"));
-    await fs.writeFile(path.join(tempBuild, "main.js"), source, "utf8");
-    await copyIfExists(path.join(projectRoot, "assets"), path.join(tempBuild, "assets"));
-
-    const projectManifest = await readProjectManifest(projectRoot);
-    const engine = projectManifest.engine === "phaser" ? "phaser" : "babylonjs";
-    await copyEngineVendor(engine, tempBuild);
-    const html = (await fileExists(sourceHtmlPath))
-      ? rewriteBuildHtml(await fs.readFile(sourceHtmlPath, "utf8"), safeProjectId, engine)
-      : defaultBuildHtml(titleFromProjectId(safeProjectId), engine);
-    await fs.writeFile(path.join(tempBuild, "index.html"), html, "utf8");
-
-    await stopPreviewServer(safeProjectId);
-    await waitForUnlockedBuild(finalBuild);
-    if (await directoryExists(finalBuild)) {
-      await fs.rename(finalBuild, backupBuild);
-    }
-    await fs.rename(tempBuild, finalBuild);
-    await fs.rm(backupBuild, { recursive: true, force: true });
-
-    const manifest = await touchManifestAfterRebuild(projectRoot);
-    await fs.rm(tempRoot, { recursive: true, force: true });
-    const preview = await startPreviewServer(null, safeProjectId);
-    return { ok: true, manifest, previewUrl: preview.ok ? preview.url : undefined };
-  } catch (error) {
-    if (await directoryExists(backupBuild)) {
-      await fs.rm(finalBuild, { recursive: true, force: true });
-      await fs.rename(backupBuild, finalBuild);
-    }
-    await fs.rm(tempRoot, { recursive: true, force: true });
-    await startPreviewServer(null, safeProjectId).catch(() => undefined);
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function readSceneFile(_event, projectId, scenePath) {
-  const resolved = await resolveProjectScenePath(projectId, scenePath);
-  if (!resolved.ok) return resolved;
-
-  try {
-    if (!(await fileExists(resolved.path))) {
-      const scene = defaultSceneFile(resolved.projectId);
-      await fs.mkdir(path.dirname(resolved.path), { recursive: true });
-      await fs.writeFile(resolved.path, JSON.stringify(scene, null, 2), "utf8");
-      return { ok: true, scene, path: resolved.relativePath };
-    }
-
-    const scene = normalizeSceneFile(JSON.parse(await fs.readFile(resolved.path, "utf8")), resolved.projectId);
-    return { ok: true, scene, path: resolved.relativePath };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function updateSceneObject(_event, projectId, scenePath, objectId, transform = {}) {
-  const resolved = await resolveProjectScenePath(projectId, scenePath);
-  if (!resolved.ok) return resolved;
-
-  try {
-    const baseScene = (await fileExists(resolved.path))
-      ? normalizeSceneFile(JSON.parse(await fs.readFile(resolved.path, "utf8")), resolved.projectId)
-      : defaultSceneFile(resolved.projectId);
-    const now = new Date().toISOString();
-    const scene = {
-      ...baseScene,
-      updatedAt: now,
-      objects: baseScene.objects.map((object) =>
-        object.id === objectId && object.editable
-          ? {
-              ...object,
-              transform: {
-                ...object.transform,
-                ...numericTransformPatch(transform),
-              },
-            }
-          : object,
-      ),
-    };
-
-    await fs.mkdir(path.dirname(resolved.path), { recursive: true });
-    await fs.writeFile(resolved.path, JSON.stringify(scene, null, 2), "utf8");
-    return { ok: true, scene };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function resolveProjectScenePath(projectId, scenePath) {
-  if (typeof projectId !== "string" || !projectId.trim()) {
-    return { ok: false, error: "Missing project id." };
-  }
-  const safeProjectId = sanitizeFilePart(projectId, "");
-  if (!safeProjectId || safeProjectId !== projectId) {
-    return { ok: false, error: "Invalid project id." };
-  }
-
-  const relativePath = typeof scenePath === "string" && scenePath.trim() ? scenePath.replace(/\\/g, "/") : "assets/scenes/main.scene.json";
-  if (relativePath.startsWith("/") || relativePath.includes("..")) {
-    return { ok: false, error: "Invalid scene path." };
-  }
-
-  const root = await workspaceRoot();
-  const projectRoot = path.resolve(root, safeProjectId);
-  const filePath = path.resolve(projectRoot, relativePath);
-  if (!filePath.startsWith(projectRoot + path.sep)) {
-    return { ok: false, error: "Invalid scene path." };
-  }
-
-  return { ok: true, projectId: safeProjectId, path: filePath, relativePath };
-}
-
-function defaultSceneFile(projectId) {
-  return normalizeSceneFile(
-    {
-      schemaVersion: 1,
-      id: `${projectId}-main-scene`,
-      engine: "babylonjs",
-      updatedAt: new Date().toISOString(),
-      objects: [
-        {
-          id: "hero-start",
-          name: "Hero start",
-          kind: "sprite",
-          editable: true,
-          tags: ["player", "spawn"],
-          transform: { x: 38, y: 58, z: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 },
-        },
-        {
-          id: "story-objective",
-          name: "Objective",
-          kind: "prop",
-          editable: true,
-          tags: ["objective"],
-          transform: { x: 66, y: 34, z: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 },
-        },
-      ],
-    },
-    projectId,
-  );
-}
-
-function normalizeSceneFile(scene, projectId) {
-  const now = new Date().toISOString();
-  const objects = Array.isArray(scene?.objects) ? scene.objects : [];
-  return {
-    schemaVersion: 1,
-    id: typeof scene?.id === "string" ? scene.id : `${projectId}-main-scene`,
-    engine: scene?.engine === "phaser" ? "phaser" : "babylonjs",
-    updatedAt: typeof scene?.updatedAt === "string" ? scene.updatedAt : now,
-    objects: objects.map(normalizeSceneObject),
-  };
-}
-
-function normalizeSceneObject(object, index) {
-  const transform = object?.transform && typeof object.transform === "object" ? object.transform : {};
-  return {
-    id: typeof object?.id === "string" ? object.id : `scene-object-${index + 1}`,
-    name: typeof object?.name === "string" ? object.name : `Scene object ${index + 1}`,
-    kind: ["sprite", "model", "trigger", "camera", "light", "zone", "prop"].includes(object?.kind) ? object.kind : "prop",
-    assetRef: typeof object?.assetRef === "string" ? object.assetRef : undefined,
-    editable: object?.editable !== false,
-    tags: Array.isArray(object?.tags) ? object.tags.filter((tag) => typeof tag === "string") : [],
-    transform: {
-      x: finiteNumber(transform.x, 50),
-      y: finiteNumber(transform.y, 50),
-      z: finiteNumber(transform.z, 0),
-      rotationX: finiteNumber(transform.rotationX, 0),
-      rotationY: finiteNumber(transform.rotationY, 0),
-      rotationZ: finiteNumber(transform.rotationZ, 0),
-      scaleX: finiteNumber(transform.scaleX, 1),
-      scaleY: finiteNumber(transform.scaleY, 1),
-      scaleZ: finiteNumber(transform.scaleZ, 1),
-    },
-  };
-}
-
-function numericTransformPatch(transform) {
-  const allowed = ["x", "y", "z", "rotationX", "rotationY", "rotationZ", "scaleX", "scaleY", "scaleZ"];
-  return Object.fromEntries(
-    allowed
-      .filter((key) => Number.isFinite(Number(transform?.[key])))
-      .map((key) => [key, Number(transform[key])]),
-  );
-}
-
-function finiteNumber(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-async function stopPreviewServer(projectId) {
-  const existing = previewServers.get(projectId);
-  if (!existing) return;
-
-  previewServers.delete(projectId);
-  await new Promise((resolve) => {
-    existing.server.close(() => resolve());
-  });
-}
-
-async function waitForUnlockedBuild(buildPath) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    try {
-      if (!(await directoryExists(buildPath))) return;
-      const probePath = path.join(buildPath, `.rebuild-probe-${Date.now()}`);
-      await fs.writeFile(probePath, "ok", "utf8");
-      await fs.rm(probePath, { force: true });
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-  }
-}
-
-function rewriteBuildHtml(html, projectId, engine = "babylonjs") {
-  const rewritten = html
-    .replace(/<script\s+src=["']\.\.\/src\/main\.js["']><\/script>/i, '<script src="./main.js"></script>')
-    .replace(/<script\s+src=["']src\/main\.js["']><\/script>/i, '<script src="./main.js"></script>')
-    .replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, '<script src="./main.js"></script>');
-
-  const withEngine = ensureEngineScript(rewritten, engine);
-
-  if (withEngine.includes('<script src="./main.js"></script>')) {
-    return withEngine;
-  }
-
-  return withEngine.replace(/<\/body>/i, `${engineScriptTag(engine)}\n    <script src="./main.js"></script>\n  </body>`);
-}
-
-function rewriteSourceForBuild(source) {
-  return source
-    .replace(/const\s+ASSET_ROOT\s*=\s*['"]\.\.['"]\s*;/, "const ASSET_ROOT = '.';")
-    .replace(/(['"`])\.\.\/assets\//g, "$1./assets/");
-}
-
-function defaultBuildHtml(title, engine = "babylonjs") {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(title)}</title>
-  </head>
-  <body>
-    <canvas id="application"></canvas>
-${engineScriptTag(engine)}
-    <script src="./main.js"></script>
-  </body>
-</html>
-`;
-}
-
-async function readProjectManifest(projectRoot) {
-  try {
-    return JSON.parse(await fs.readFile(path.join(projectRoot, "manifest.json"), "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-async function copyEngineVendor(engine, buildRoot) {
-  const vendorFiles =
-    engine === "phaser"
-      ? [{ source: path.join(appRoot, "node_modules", "phaser", "dist", "phaser.min.js"), target: path.join(buildRoot, "vendor", "phaser.min.js") }]
-      : [
-          { source: path.join(appRoot, "node_modules", "@babylonjs", "core", "babylon.js"), target: path.join(buildRoot, "vendor", "babylon.js") },
-          { source: path.join(appRoot, "node_modules", "@babylonjs", "loaders", "babylonjs.loaders.min.js"), target: path.join(buildRoot, "vendor", "babylonjs.loaders.min.js") },
-        ];
-
-  for (const file of vendorFiles) {
-    if (!(await fileExists(file.source))) continue;
-    await fs.mkdir(path.dirname(file.target), { recursive: true });
-    await fs.copyFile(file.source, file.target);
-  }
-}
-
-function ensureEngineScript(html, engine) {
-  if (engine === "phaser") {
-    if (html.includes("vendor/phaser.min.js") || html.includes("Phaser")) return html;
-    return html.replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, `${engineScriptTag(engine)}\n    <script src="./main.js"></script>`);
-  }
-
-  if (html.includes("vendor/babylon.js") || html.includes("BABYLON")) return html;
-  return html.replace(/<script\s+src=["']\.\/main\.js["']><\/script>/i, `${engineScriptTag(engine)}\n    <script src="./main.js"></script>`);
-}
-
-function engineScriptTag(engine) {
-  if (engine === "phaser") {
-    return '    <script src="./vendor/phaser.min.js"></script>';
-  }
-  return ['    <script src="./vendor/babylon.js"></script>', '    <script src="./vendor/babylonjs.loaders.min.js"></script>'].join("\n");
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-async function touchManifestAfterRebuild(projectRoot) {
-  const manifestPath = path.join(projectRoot, "manifest.json");
-  let manifest = {};
-  try {
-    manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
-  } catch {
-    manifest = {};
-  }
-
-  const now = new Date().toISOString();
-  manifest.id = typeof manifest.id === "string" ? manifest.id : path.basename(projectRoot);
-  manifest.title = typeof manifest.title === "string" ? manifest.title : titleFromProjectId(manifest.id);
-  manifest.engine = manifest.engine === "phaser" ? "phaser" : "babylonjs";
-  manifest.style = typeof manifest.style === "string" ? manifest.style : manifest.engine === "phaser" ? "2D" : "babylonjs";
-  manifest.createdAt = typeof manifest.createdAt === "string" ? manifest.createdAt : now;
-  manifest.updatedAt = now;
-  manifest.workspacePath = typeof manifest.workspacePath === "string" ? manifest.workspacePath : manifest.id;
-  manifest.runtimeEntry = typeof manifest.runtimeEntry === "string" ? manifest.runtimeEntry : manifest.playCanvasEntry || "src/main.js";
-  manifest.babylonEntry = typeof manifest.babylonEntry === "string" ? manifest.babylonEntry : manifest.engine === "babylonjs" ? manifest.runtimeEntry : undefined;
-  manifest.phaserEntry = typeof manifest.phaserEntry === "string" ? manifest.phaserEntry : manifest.engine === "phaser" ? manifest.runtimeEntry : undefined;
-  manifest.editor = normalizeEditorState(manifest.editor);
-  manifest.logicGraph = normalizeLogicGraph(manifest.logicGraph, now);
-  manifest.buildPath = `${manifest.id}/build/index.html`;
-  manifest.promptHistory = Array.isArray(manifest.promptHistory) ? manifest.promptHistory : [];
-  manifest.runHistory = Array.isArray(manifest.runHistory) ? manifest.runHistory : [];
-  manifest.assets = Array.isArray(manifest.assets) ? manifest.assets : [];
-  manifest.runHistory.unshift({
-    id: `local-rebuild-${timestampForFile()}`,
-    createdAt: now,
-    status: "ready",
-    summary: "Rebuilt local preview from the current game source without running the agent.",
-  });
-
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
-  return manifest;
-}
-
-async function copyIfExists(source, destination) {
-  if (await directoryExists(source)) {
-    await fs.cp(source, destination, { recursive: true });
-  }
-}
-
-async function directoryExists(directoryPath) {
-  try {
-    const stat = await fs.stat(directoryPath);
-    return stat.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function contentTypeFor(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".html") return "text/html; charset=utf-8";
-  if (ext === ".js") return "text/javascript; charset=utf-8";
-  if (ext === ".css") return "text/css; charset=utf-8";
-  if (ext === ".json") return "application/json; charset=utf-8";
-  if (ext === ".png") return "image/png";
-  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".mp3") return "audio/mpeg";
-  if (ext === ".wav") return "audio/wav";
-  if (ext === ".ogg") return "audio/ogg";
-  return "application/octet-stream";
 }
 
 function registerProjectProtocol() {
@@ -1247,91 +776,6 @@ function phaseForTool(name) {
   return "planning";
 }
 
-async function createWindow() {
-  const win = new BrowserWindow({
-    width: 1440,
-    height: 980,
-    minWidth: 1120,
-    minHeight: 760,
-    frame: false,
-    titleBarStyle: "hidden",
-    backgroundColor: "#fff9e8",
-    webPreferences: {
-      preload: path.join(__dirname, "electron-preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  if (isDev) {
-    await win.loadURL("http://127.0.0.1:5050");
-  } else {
-    await win.loadFile(path.join(appRoot, "dist", "index.html"));
-  }
-}
-
-async function openPreviewWindow(_event, url) {
-  if (typeof url !== "string" || !url.startsWith("http://127.0.0.1:")) {
-    return { ok: false, error: "Invalid preview URL." };
-  }
-
-  const previewWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 960,
-    minHeight: 640,
-    backgroundColor: "#090d16",
-    title: "Game Spark Preview",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  await previewWindow.loadURL(url);
-  return { ok: true };
-}
-
-async function openEditorPanelWindow(_event, panelId) {
-  const safePanelId = ["navigator", "assistant", "preview"].includes(panelId) ? panelId : "";
-  if (!safePanelId) {
-    return { ok: false, error: "Invalid editor panel." };
-  }
-
-  const panelWindow = new BrowserWindow({
-    width: safePanelId === "preview" ? 1280 : 980,
-    height: 820,
-    minWidth: 720,
-    minHeight: 560,
-    frame: false,
-    titleBarStyle: "hidden",
-    backgroundColor: "#f8f5ff",
-    title: "Game Spark Editor Panel",
-    webPreferences: {
-      preload: path.join(__dirname, "electron-preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  const panelQuery = `?panel=${encodeURIComponent(safePanelId)}`;
-  if (isDev) {
-    await panelWindow.loadURL(`http://127.0.0.1:5050/${panelQuery}`);
-  } else {
-    await panelWindow.loadFile(path.join(appRoot, "dist", "index.html"), { query: { panel: safePanelId } });
-  }
-  return { ok: true };
-}
-
-async function openPreviewInBrowser(_event, url) {
-  if (typeof url !== "string" || !url.startsWith("http://127.0.0.1:")) {
-    return { ok: false, error: "Invalid preview URL." };
-  }
-
-  await shell.openExternal(url);
-  return { ok: true };
-}
-
 ipcMain.handle("codex:start-run", startCodexRun);
 ipcMain.handle("codex:stop-run", stopCodexRun);
 ipcMain.handle("workspace:get", getWorkspaceInfo);
@@ -1341,13 +785,13 @@ ipcMain.handle("workspace:list-projects", listWorkspaceProjects);
 ipcMain.handle("settings:get", getAppSettings);
 ipcMain.handle("settings:update", updateAppSettings);
 ipcMain.handle("interaction:log", logInteraction);
-ipcMain.handle("preview:start-server", startPreviewServer);
-ipcMain.handle("preview:rebuild", rebuildProjectPreview);
-ipcMain.handle("scene:read", readSceneFile);
-ipcMain.handle("scene:update-object", updateSceneObject);
-ipcMain.handle("preview:open-window", openPreviewWindow);
-ipcMain.handle("preview:open-browser", openPreviewInBrowser);
-ipcMain.handle("editor:open-panel-window", openEditorPanelWindow);
+ipcMain.handle("preview:start-server", projectPreviewService.startPreviewServer);
+ipcMain.handle("preview:rebuild", projectPreviewService.rebuildProjectPreview);
+ipcMain.handle("scene:read", projectPreviewService.readSceneFile);
+ipcMain.handle("scene:update-object", projectPreviewService.updateSceneObject);
+ipcMain.handle("preview:open-window", (_event, url) => windowService.openPreviewWindow(url));
+ipcMain.handle("preview:open-browser", (_event, url) => windowService.openPreviewInBrowser(url));
+ipcMain.handle("editor:open-panel-window", (_event, panelId) => windowService.openEditorPanelWindow(panelId));
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -1363,7 +807,7 @@ ipcMain.handle("window:close", (event) => BrowserWindow.fromWebContents(event.se
 
 app.whenReady().then(() => {
   registerProjectProtocol();
-  return createWindow();
+  return windowService.createMainWindow();
 });
 
 app.on("window-all-closed", () => {
@@ -1374,6 +818,6 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    windowService.createMainWindow();
   }
 });
