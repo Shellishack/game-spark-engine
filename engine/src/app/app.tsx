@@ -1093,8 +1093,22 @@ function Workspace({
   onToolPrompt: (toolId: EditorToolId, instruction: string) => void;
   onSelectAsset: (assetId: string) => void;
 }) {
+  const readyToolCount = (project?.editor.tools ?? []).filter((tool) => tool.status === "ready").length;
+  const totalToolCount = project?.editor.tools.length ?? createDefaultEditorState().tools.length;
+  const assetCount = project?.assets.length ?? 0;
+  const logicNodeCount = project?.logicGraph.nodes.length ?? 0;
+
   return (
     <section className="workspace-view">
+      <EditorCommandCenter
+        project={project}
+        phase={phase}
+        workspace={workspace}
+        readyToolCount={readyToolCount}
+        totalToolCount={totalToolCount}
+        assetCount={assetCount}
+        logicNodeCount={logicNodeCount}
+      />
       <NavigationPanel
         project={project}
         workspace={workspace}
@@ -1117,6 +1131,7 @@ function Workspace({
         events={events}
         phase={phase}
         project={project}
+        selectedAsset={selectedAsset}
         activeEditorTool={activeEditorTool}
         applyMode={applyMode}
         onApplyModeChange={onApplyModeChange}
@@ -1135,6 +1150,52 @@ function Workspace({
         logInteraction={logInteraction}
       />
     </section>
+  );
+}
+
+function EditorCommandCenter({
+  project,
+  phase,
+  workspace,
+  readyToolCount,
+  totalToolCount,
+  assetCount,
+  logicNodeCount,
+}: {
+  project: GameProjectManifest | null;
+  phase: AgentPhase;
+  workspace: WorkspaceInfo;
+  readyToolCount: number;
+  totalToolCount: number;
+  assetCount: number;
+  logicNodeCount: number;
+}) {
+  const ports = [
+    { label: "Runtime", value: project ? engineLabel(project.engine) : "None" },
+    { label: "AI tools", value: `${readyToolCount}/${totalToolCount}` },
+    { label: "Assets", value: String(assetCount) },
+    { label: "Logic", value: `${logicNodeCount} nodes` },
+  ];
+
+  return (
+    <header className="editor-command-center">
+      <div className="editor-command-title">
+        <p className="eyebrow">AI native editor</p>
+        <h1>{project?.title ?? "Game workspace"}</h1>
+        <span>{workspace.path}</span>
+      </div>
+      <div className="editor-port-strip" aria-label="Editor ports">
+        {ports.map((port) => (
+          <div className="editor-port-card" key={port.label}>
+            <span>{port.label}</span>
+            <strong>{port.value}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="editor-run-state">
+        <span className={`phase-chip phase-${phase}`}>{phaseLabels[phase]}</span>
+      </div>
+    </header>
   );
 }
 
@@ -1378,6 +1439,7 @@ function AgentChat({
   events,
   phase,
   project,
+  selectedAsset,
   activeEditorTool,
   applyMode,
   onApplyModeChange,
@@ -1391,6 +1453,7 @@ function AgentChat({
   events: AgentEvent[];
   phase: AgentPhase;
   project: GameProjectManifest | null;
+  selectedAsset?: GameProjectAsset;
   activeEditorTool: EditorToolId;
   applyMode: ApplyMode;
   onApplyModeChange: (mode: ApplyMode) => void;
@@ -1425,6 +1488,7 @@ function AgentChat({
 
       <EditorToolWorkspace
         project={project}
+        selectedAsset={selectedAsset}
         activeTool={activeEditorTool}
         applyMode={applyMode}
         onApplyModeChange={onApplyModeChange}
@@ -1447,12 +1511,14 @@ function AgentChat({
 
 function EditorToolWorkspace({
   project,
+  selectedAsset,
   activeTool,
   applyMode,
   onApplyModeChange,
   onToolPrompt,
 }: {
   project: GameProjectManifest | null;
+  selectedAsset?: GameProjectAsset;
   activeTool: EditorToolId;
   applyMode: ApplyMode;
   onApplyModeChange: (mode: ApplyMode) => void;
@@ -1476,6 +1542,7 @@ function EditorToolWorkspace({
         </div>
       </div>
       <p className="editor-tool-summary">{tool?.summary}</p>
+      <AIPortMatrix project={project} selectedAsset={selectedAsset} activeTool={activeTool} />
       {activeTool === "logic" ? <LogicGraphPreview graph={project?.logicGraph ?? createDefaultLogicGraph()} /> : <ToolPreview toolId={activeTool} engine={project?.engine ?? "babylonjs"} />}
       <div className="tool-action-grid">
         {actions.map((action) => (
@@ -1486,6 +1553,52 @@ function EditorToolWorkspace({
         ))}
       </div>
     </section>
+  );
+}
+
+function AIPortMatrix({
+  project,
+  selectedAsset,
+  activeTool,
+}: {
+  project: GameProjectManifest | null;
+  selectedAsset?: GameProjectAsset;
+  activeTool: EditorToolId;
+}) {
+  const activeToolMeta = project?.editor.tools.find((tool) => tool.id === activeTool) ?? createDefaultEditorState().tools.find((tool) => tool.id === activeTool);
+  const ports = [
+    {
+      label: "Prompt port",
+      value: activeToolMeta?.title ?? "Tool",
+      detail: "Chat instructions route into the selected editor tool.",
+    },
+    {
+      label: "Scene port",
+      value: project?.editor.activeScenePath ?? "scene.json",
+      detail: "Edits are reflected in the live scene manifest.",
+    },
+    {
+      label: "Asset port",
+      value: selectedAsset?.name ?? "No asset selected",
+      detail: selectedAsset ? `${selectedAsset.kind} asset ready for AI iteration.` : "Select an asset to expose it to the editor context.",
+    },
+    {
+      label: "Logic port",
+      value: `${project?.logicGraph.nodes.length ?? 0} nodes`,
+      detail: "Game rules can be generated as editable logic graph nodes.",
+    },
+  ];
+
+  return (
+    <div className="ai-port-matrix" aria-label="AI editor ports">
+      {ports.map((port) => (
+        <article key={port.label}>
+          <span>{port.label}</span>
+          <strong>{port.value}</strong>
+          <p>{port.detail}</p>
+        </article>
+      ))}
+    </div>
   );
 }
 
