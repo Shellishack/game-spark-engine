@@ -36,7 +36,15 @@ const capabilityGallery = [
     imageUrl: capabilityAssetsGenerationUrl,
   },
 ];
-
+const showcaseExamples = [
+  {
+    projectId: "cochem-gaussian-splat-showcase",
+    title: "Cochem Imperial Castle",
+    eyebrow: "Gaussian splat",
+    description: "A Babylon.js SOG showcase using orbit controls and a local-first imported splat asset.",
+    tags: ["Babylon.js", "SOG", "3D capture"],
+  },
+];
 export function Home(
   props: {
     workspace: WorkspaceInfo;
@@ -95,6 +103,15 @@ export function Home(
           >
             Hub
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              logInteraction("home_tab_clicked", { tab: "showcases" });
+              document.getElementById("home-showcases")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
+            Showcases
+          </button>
         </nav>
         <div className="home-top-actions">
           <span className="status-pill">Local Codex backend</span>
@@ -102,6 +119,7 @@ export function Home(
       </div>
 
       <CapabilityGallery />
+      <ShowcaseSection projects={props.workspaceProjects} onOpenProject={props.onOpenProject} />
 
       <div className="home-hub-grid" id="home-hub">
         <div className="home-main-column">
@@ -165,6 +183,58 @@ function CapabilityGallery() {
   );
 }
 
+function ShowcaseSection({ projects, onOpenProject }: { projects: WorkspaceProjectSummary[]; onOpenProject: (project: WorkspaceProjectSummary) => void }) {
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
+
+  return (
+    <section className="showcase-section" id="home-showcases" aria-label="Showcase examples">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Showcase examples</p>
+          <h2>Open ready-made engine scenes.</h2>
+        </div>
+        <span>{showcaseExamples.length} examples</span>
+      </div>
+      <div className="showcase-grid">
+        {showcaseExamples.map((showcase) => {
+          const project = projectsById.get(showcase.projectId);
+          return (
+            <article className="showcase-card" key={showcase.projectId}>
+              <div className="showcase-preview" aria-hidden="true">
+                <div className="showcase-splat" />
+                <span>3D</span>
+              </div>
+              <div className="showcase-copy">
+                <span>{showcase.eyebrow}</span>
+                <h3>{showcase.title}</h3>
+                <p>{showcase.description}</p>
+                <div className="showcase-tags">
+                  {showcase.tags.map((tag) => (
+                    <small key={tag}>{tag}</small>
+                  ))}
+                </div>
+              </div>
+              <div className="showcase-footer">
+                <small>{project?.hasBuild ? "Preview ready" : "Project not found"}</small>
+                <button
+                  type="button"
+                  disabled={!project}
+                  onClick={() => {
+                    if (!project) return;
+                    logInteraction("showcase_opened", { projectId: project.id, projectTitle: project.title });
+                    onOpenProject(project);
+                  }}
+                >
+                  View
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 function RecentGames({ projects, onOpenProject }: { projects: WorkspaceProjectSummary[]; onOpenProject: (project: WorkspaceProjectSummary) => void }) {
   return (
     <section className="existing-projects-band" aria-label="Existing projects">

@@ -554,6 +554,7 @@ async function createCodexPrompt(request) {
     "If applyMode is preview, describe proposed file and asset changes before applying them. If applyMode is auto, apply the change, validate, and report what changed.",
     "Generated assets must be visibly used in the playable runtime. Do not satisfy asset generation by writing files and manifest entries only.",
     "When ENGINE is babylonjs, load image-blaster generated scene/model assets into a Babylon.js Engine and Scene, then overlay the 2D character and bottom dialogue UI on top of that scene.",
+    "For Babylon.js 3D scene viewers, load imported or generated 3D assets, including Gaussian splats, as environment/world models in the Babylon scene. In edit mode, support default viewer controls: hold right mouse plus WASD to move the camera, mouse wheel to zoom, and hold mouse wheel to pan.",
     "When ENGINE is phaser, load sprites, tilemaps, images, audio, and UI directly into Phaser scenes and keep the build browser-playable from build/index.html.",
     "Generated sprite sheets must be loaded by the overlay/runtime layer and animated from the 4x3 sheet layout.",
     "Generated 3D model or scene assets from image-blaster must be saved under assets/models or assets/scenes and loaded/instantiated through Babylon.js. If image-blaster is unavailable, record the gap and do not claim generated 3D assets exist.",
