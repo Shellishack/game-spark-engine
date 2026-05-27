@@ -31,8 +31,9 @@ export function GamePreviewPanel({
   const [scene, setScene] = useState<SceneFile | null>(null);
   const [selectedSceneObjectId, setSelectedSceneObjectId] = useState("");
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
-  const panStateRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
+  const viewportStageRef = useRef<HTMLDivElement | null>(null);
   const rightMouseHeldRef = useRef(false);
+  const [isViewportFullscreen, setIsViewportFullscreen] = useState(false);
   const previewStatus = isWorking && hasPreview ? "Previous version" : hasPreview ? "Playtest ready" : isWorking ? "Generating game" : "No preview yet";
   const selectedSceneObject = scene?.objects.find((object) => object.id === selectedSceneObjectId) ?? null;
 
@@ -78,11 +79,19 @@ export function GamePreviewPanel({
     };
   }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt, effectivePreviewProject?.editor.activeScenePath]);
 
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsViewportFullscreen(document.fullscreenElement === viewportStageRef.current);
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   const previewFrameUrl =
     previewUrl && effectivePreviewProject
       ? `${previewUrl}?t=${encodeURIComponent(effectivePreviewProject.updatedAt)}&mode=${previewMode}&start=${playStartMode}`
       : "";
-  const hasEditableSceneObjects = Boolean(scene?.objects.some((object) => object.editable));
 
   function startPlay(nextStartMode: PlayStartMode) {
     setPlayStartMode(nextStartMode);
@@ -109,29 +118,25 @@ export function GamePreviewPanel({
     logInteraction("preview_viewport_transform_reset", { projectId: effectivePreviewProject?.id });
   }
 
-  function beginViewportPan(event: React.PointerEvent<HTMLDivElement>) {
-    if (previewMode !== "edit" || event.target !== event.currentTarget) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    panStateRef.current = {
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startX: event.clientX,
-      startY: event.clientY,
-    };
-  }
+  async function toggleViewportFullscreen() {
+    const stage = viewportStageRef.current;
+    if (!stage) return;
 
-  function updateViewportPan(event: React.PointerEvent<HTMLDivElement>) {
-    const panState = panStateRef.current;
-    if (!panState || panState.pointerId !== event.pointerId) return;
-    sendPreviewControl("pan", { dx: event.clientX - panState.startX, dy: event.clientY - panState.startY });
-    panState.startX = event.clientX;
-    panState.startY = event.clientY;
-  }
+    try {
+      if (document.fullscreenElement === stage) {
+        await document.exitFullscreen();
+        logInteraction("preview_fullscreen_exited", { projectId: effectivePreviewProject?.id });
+        return;
+      }
 
-  function endViewportPan(event: React.PointerEvent<HTMLDivElement>) {
-    if (panStateRef.current?.pointerId !== event.pointerId) return;
-    panStateRef.current = null;
+      await stage.requestFullscreen();
+      logInteraction("preview_fullscreen_started", { projectId: effectivePreviewProject?.id });
+    } catch (error) {
+      logInteraction("preview_fullscreen_failed", {
+        projectId: effectivePreviewProject?.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   function handleViewportKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -206,6 +211,7 @@ export function GamePreviewPanel({
       </div>
       <div className={`viewport-workbench viewport-${viewportMode}`}>
         <div
+          ref={viewportStageRef}
           className={`viewport-stage ${previewMode === "edit" ? "is-editing" : "is-playing"}`}
           tabIndex={previewMode === "edit" ? 0 : -1}
           onContextMenu={(event) => {
@@ -234,17 +240,6 @@ export function GamePreviewPanel({
             {effectivePreviewProject && previewFrameUrl ? (
               <iframe ref={previewFrameRef} className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} />
             ) : null}
-            {effectivePreviewProject && previewMode === "edit" && scene && hasEditableSceneObjects ? (
-              <SceneEditOverlay
-                scene={scene}
-                selectedObjectId={selectedSceneObjectId}
-                onSelect={setSelectedSceneObjectId}
-                onMove={moveSceneObject}
-                onPanStart={beginViewportPan}
-                onPanMove={updateViewportPan}
-                onPanEnd={endViewportPan}
-              />
-            ) : null}
           </div>
           {!effectivePreviewProject || !previewUrl ? (
             <div className="preview-empty-state">
@@ -271,6 +266,16 @@ export function GamePreviewPanel({
               </button>
             </div>
           ) : null}
+          <button
+            className="viewport-fullscreen-button"
+            type="button"
+            disabled={!hasPreview || !previewUrl}
+            aria-label={isViewportFullscreen ? "Exit fullscreen viewport" : "Open viewport fullscreen"}
+            title={isViewportFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            onClick={toggleViewportFullscreen}
+          >
+            {isViewportFullscreen ? "Exit" : "Fullscreen"}
+          </button>
         </div>
         {viewportMode !== "game" ? (
           <ViewportInspector
@@ -329,60 +334,6 @@ export function GamePreviewPanel({
         </button>
       </div>
     </section>
-  );
-}
-
-function SceneEditOverlay({
-  scene,
-  selectedObjectId,
-  onSelect,
-  onMove,
-  onPanStart,
-  onPanMove,
-  onPanEnd,
-}: {
-  scene: SceneFile;
-  selectedObjectId: string;
-  onSelect: (objectId: string) => void;
-  onMove: (object: SceneObject, x: number, y: number) => void;
-  onPanStart: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onPanMove: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onPanEnd: (event: React.PointerEvent<HTMLDivElement>) => void;
-}) {
-  return (
-    <div
-      className="scene-edit-overlay"
-      aria-label="Scene edit overlay"
-      onPointerDown={onPanStart}
-      onPointerMove={onPanMove}
-      onPointerUp={onPanEnd}
-      onPointerCancel={onPanEnd}
-    >
-      {scene.objects
-        .filter((object) => object.editable)
-        .map((object) => (
-          <button
-            className={`scene-object-handle ${object.id === selectedObjectId ? "selected" : ""}`}
-            key={object.id}
-            type="button"
-            style={{ left: `${object.transform.x}%`, top: `${object.transform.y}%` }}
-            onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              onSelect(object.id);
-            }}
-            onPointerMove={(event) => {
-              if (event.buttons !== 1) return;
-              const bounds = event.currentTarget.parentElement?.getBoundingClientRect();
-              if (!bounds) return;
-              const x = ((event.clientX - bounds.left) / bounds.width) * 100;
-              const y = ((event.clientY - bounds.top) / bounds.height) * 100;
-              onMove(object, x, y);
-            }}
-          >
-            <span>{object.name}</span>
-          </button>
-        ))}
-    </div>
   );
 }
 

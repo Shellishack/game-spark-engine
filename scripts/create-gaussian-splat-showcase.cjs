@@ -97,34 +97,47 @@ import "@babylonjs/loaders/SPLAT";
   const light = new BABYLON.HemisphericLight("soft-sky", new BABYLON.Vector3(0.2, 1, 0.4), scene);
   light.intensity = 0.65;
 
-  const ui = createOverlay();
+  installCanvasStyles();
+  const transformState = {
+    offsetX: 0,
+    offsetY: 0,
+    offsetZ: 0,
+    rotationX: 180,
+    rotationY: 180,
+    rotationZ: 0,
+    scale: 1,
+  };
+  const transformOverlay = createTransformOverlay(transformState, applyTransformState);
   const modelUrl = "./assets/models/cochem-imperial-castle.sog";
+  let environmentRoot = null;
+  let baseTransform = null;
 
   BABYLON.ImportMeshAsync(modelUrl, scene)
     .then((result) => {
       const splat = result.meshes.find((mesh) => mesh instanceof BABYLON.GaussianSplattingMesh) || result.meshes[0];
       splat.name = "Cochem Imperial Castle SOG";
-      splat.rotation = new BABYLON.Vector3(0, Math.PI, 0);
-      splat.scaling = new BABYLON.Vector3(1, 1, 1);
 
-      const environmentRoot = new BABYLON.TransformNode("environment-root", scene);
+      environmentRoot = new BABYLON.TransformNode("environment-root", scene);
       result.meshes.forEach((mesh) => {
         if (mesh === environmentRoot) return;
         mesh.parent = environmentRoot;
       });
 
       const frame = moveEnvironmentToCameraTarget(environmentRoot, result.meshes, BABYLON);
+      baseTransform = {
+        position: environmentRoot.position.clone(),
+        scaling: environmentRoot.scaling.clone(),
+      };
+      applyTransformState();
       camera.position.copyFrom(frame.center.add(new BABYLON.Vector3(0, frame.radius * 0.28, -frame.radius)));
       camera.setTarget(frame.center);
       camera.metadata = { ...(camera.metadata || {}), viewerRadius: frame.radius };
       camera.maxZ = Math.max(frame.radius * 40, 1000);
+      transformOverlay.setStatus("Loaded");
 
-      ui.status.textContent = "SOG loaded";
-      ui.detail.textContent = "3D scene viewer loaded. Hold right mouse + WASD to move, scroll to zoom, hold mouse wheel to pan.";
     })
     .catch((error) => {
-      ui.status.textContent = "Load failed";
-      ui.detail.textContent = error instanceof Error ? error.message : String(error);
+      transformOverlay.setStatus("Load failed");
       console.error(error);
     });
 
@@ -183,6 +196,19 @@ import "@babylonjs/loaders/SPLAT";
         max: new BABYLON.Vector3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY),
       },
     );
+  }
+
+  function applyTransformState() {
+    if (!environmentRoot || !baseTransform) return;
+    environmentRoot.position.copyFrom(
+      baseTransform.position.add(new BABYLON.Vector3(transformState.offsetX, transformState.offsetY, transformState.offsetZ)),
+    );
+    environmentRoot.rotation = new BABYLON.Vector3(
+      BABYLON.Tools.ToRadians(transformState.rotationX),
+      BABYLON.Tools.ToRadians(transformState.rotationY),
+      BABYLON.Tools.ToRadians(transformState.rotationZ),
+    );
+    environmentRoot.scaling.copyFrom(baseTransform.scaling.scale(transformState.scale));
   }
 
   function installDefaultSceneViewerControls(canvas, camera, BABYLON) {
@@ -311,7 +337,7 @@ import "@babylonjs/loaders/SPLAT";
     }
   }
 
-  function createOverlay() {
+  function installCanvasStyles() {
     const style = document.createElement("style");
     style.textContent = \`
       html, body {
@@ -330,57 +356,131 @@ import "@babylonjs/loaders/SPLAT";
         outline: none;
       }
 
-      .showcase-panel {
+      .coords-panel {
         position: fixed;
-        left: 18px;
-        top: 18px;
-        max-width: min(420px, calc(100vw - 36px));
-        padding: 14px 16px;
+        left: 14px;
+        bottom: 14px;
+        z-index: 10;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        width: min(360px, calc(100vw - 28px));
+        padding: 12px;
         color: #eef4ff;
-        background: rgba(8, 11, 16, 0.74);
+        background: rgba(8, 11, 16, 0.76);
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: 8px;
         box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
         backdrop-filter: blur(10px);
       }
 
-      .showcase-panel h1 {
-        margin: 0 0 8px;
-        font-size: 15px;
-        font-weight: 700;
-        letter-spacing: 0;
+      .coords-panel header {
+        display: flex;
+        grid-column: 1 / -1;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
       }
 
-      .showcase-panel p {
-        margin: 0;
-        color: #bfcbda;
-        font-size: 13px;
-        line-height: 1.45;
+      .coords-panel-body {
+        display: contents;
       }
 
-      .showcase-panel strong {
-        display: inline-block;
-        margin-top: 10px;
-        color: #9ee3c2;
+      .coords-panel.collapsed {
+        grid-template-columns: minmax(0, 1fr);
+        width: auto;
+      }
+
+      .coords-panel.collapsed .coords-panel-body,
+      .coords-panel.collapsed [data-status] {
+        display: none;
+      }
+
+      .coords-panel strong,
+      .coords-panel span,
+      .coords-panel label {
         font-size: 12px;
         letter-spacing: 0;
-        text-transform: uppercase;
+      }
+
+      .coords-panel span {
+        color: #9ee3c2;
+      }
+
+      .coords-panel label {
+        display: grid;
+        gap: 4px;
+        color: #bfcbda;
+      }
+
+      .coords-panel input {
+        min-width: 0;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 6px;
+        padding: 6px 8px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #eef4ff;
+        font: inherit;
+      }
+
+      .coords-panel button {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #eef4ff;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
       }
     \`;
     document.head.appendChild(style);
+  }
 
+  function createTransformOverlay(state, onChange) {
     const panel = document.createElement("section");
-    panel.className = "showcase-panel";
+    panel.className = "coords-panel";
     panel.innerHTML = \`
-      <h1>Cochem Imperial Castle</h1>
-      <p data-detail>Loading Gaussian splat from local project assets...</p>
-      <strong data-status>Loading SOG</strong>
+      <header>
+        <strong>Scene transform</strong>
+        <span data-status>Loading</span>
+        <button type="button" data-collapse aria-label="Collapse scene transform panel">Hide</button>
+      </header>
+      <div class="coords-panel-body">
+        <label>Position X <input type="number" step="0.1" data-key="offsetX" /></label>
+        <label>Position Y <input type="number" step="0.1" data-key="offsetY" /></label>
+        <label>Position Z <input type="number" step="0.1" data-key="offsetZ" /></label>
+        <label>Rotate X <input type="number" step="1" data-key="rotationX" /></label>
+        <label>Rotate Y <input type="number" step="1" data-key="rotationY" /></label>
+        <label>Rotate Z <input type="number" step="1" data-key="rotationZ" /></label>
+        <label>Scale <input type="number" min="0.05" step="0.05" data-key="scale" /></label>
+      </div>
     \`;
     document.body.appendChild(panel);
+    const collapseButton = panel.querySelector("[data-collapse]");
+
+    collapseButton.addEventListener("click", () => {
+      const collapsed = panel.classList.toggle("collapsed");
+      collapseButton.textContent = collapsed ? "Show" : "Hide";
+      collapseButton.setAttribute("aria-label", collapsed ? "Expand scene transform panel" : "Collapse scene transform panel");
+    });
+
+    panel.querySelectorAll("input").forEach((input) => {
+      const key = input.dataset.key;
+      input.value = String(state[key]);
+      input.addEventListener("input", () => {
+        const value = Number(input.value);
+        if (!Number.isFinite(value)) return;
+        state[key] = key === "scale" ? Math.max(0.05, value) : value;
+        onChange();
+      });
+    });
 
     return {
-      detail: panel.querySelector("[data-detail]"),
-      status: panel.querySelector("[data-status]"),
+      setStatus(status) {
+        const statusElement = panel.querySelector("[data-status]");
+        if (statusElement) statusElement.textContent = status;
+      },
     };
   }
 })();
@@ -401,7 +501,7 @@ function sceneFile(now) {
         assetRef: "asset-cochem-sog",
         editable: true,
         tags: ["gaussian-splat", "sog", "showcase"],
-        transform: { x: 50, y: 50, z: 0, rotationX: 0, rotationY: 180, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 },
+        transform: { x: 50, y: 50, z: 0, rotationX: 180, rotationY: 180, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 },
       },
     ],
   };
