@@ -1,0 +1,12 @@
+{
+  "name": "@game-spark/cli",
+  "private": true,
+  "version": "0.1.0",
+  "bin": {
+    "game-spark": "dist/game-spark.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "build": "node ../editor/node_modules/typescript/bin/tsc -p tsconfig.json"
+  }
+}

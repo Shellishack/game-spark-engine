@@ -9,12 +9,13 @@ import { GamePreviewPanel } from "../components/game-preview-panel";
 import { AgentChat, DockDragPreview, DockGroupView, EditorCommandCenter, NavigationPanel, previewDockGroupsForDrag, reorderDockGroupsForPanel } from "./editor-dock";
 import { defaultDockGroups, dockGroupDefaults, editorPanelCatalog } from "./editor-dock-model";
 import type { EditorDockGroup, EditorDockGroupId, EditorPanelId, EditorPanelLayout } from "./editor-dock-model";
-import type { AgentEnvVariable, AgentEvent, AgentPhase, ApplyMode, EditorToolId, GameProjectAsset, GameProjectManifest, PromptBlock, WorkspaceInfo } from "../../types/project-types";
+import type { AgentEnvVariable, AgentEvent, AgentPhase, ApplyMode, CliPreviewSession, EditorToolId, GameProjectAsset, GameProjectManifest, PromptBlock, WorkspaceInfo } from "../../types/project-types";
 export function Workspace({
   promptBlocks,
   project,
   previewProject,
   previewableProjectIds,
+  cliPreviewSession,
   selectedAsset,
   selectedAssetId,
   events,
@@ -45,6 +46,7 @@ export function Workspace({
   project: GameProjectManifest | null;
   previewProject: GameProjectManifest | null;
   previewableProjectIds: Set<string>;
+  cliPreviewSession?: CliPreviewSession | null;
   selectedAsset?: GameProjectAsset;
   selectedAssetId: string;
   events: AgentEvent[];
@@ -212,6 +214,7 @@ export function Workspace({
         project={project}
         previewProject={previewProject}
         previewableProjectIds={previewableProjectIds}
+        cliPreviewSession={cliPreviewSession}
         phase={phase}
         onRebuildSource={onRebuildSource}
         logInteraction={logInteraction}

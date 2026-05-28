@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld("gameSpark", {
   openEditorPanelWindow(panelId) {
     return ipcRenderer.invoke("editor:open-panel-window", panelId);
   },
+  getCliPreviewSession() {
+    return ipcRenderer.invoke("cli-preview:get-session");
+  },
   startPreviewServer(projectId) {
     return ipcRenderer.invoke("preview:start-server", projectId);
   },
@@ -46,8 +49,14 @@ contextBridge.exposeInMainWorld("gameSpark", {
   readSceneFile(projectId, scenePath) {
     return ipcRenderer.invoke("scene:read", projectId, scenePath);
   },
+  readCliPreviewSceneFile(scenePath) {
+    return ipcRenderer.invoke("cli-preview:scene-read", scenePath);
+  },
   updateSceneObject(projectId, scenePath, objectId, transform) {
     return ipcRenderer.invoke("scene:update-object", projectId, scenePath, objectId, transform);
+  },
+  updateCliPreviewSceneObject(scenePath, objectId, transform) {
+    return ipcRenderer.invoke("cli-preview:scene-update-object", scenePath, objectId, transform);
   },
   minimizeWindow() {
     return ipcRenderer.invoke("window:minimize");

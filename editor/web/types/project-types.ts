@@ -178,6 +178,14 @@ export type WorkspaceProjectSummary = {
   manifest: GameProjectManifest;
 };
 
+export type CliPreviewSession = {
+  projectId: string;
+  projectRoot: string;
+  previewUrl: string;
+  mode: "edit";
+  manifest?: GameProjectManifest | null;
+};
+
 export type CodexRunStartResult = {
   ok: boolean;
   projectDir?: string;
@@ -205,11 +213,18 @@ export type GameSparkBridge = {
   openPreviewWindow?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   openPreviewInBrowser?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   openEditorPanelWindow?: (panelId: "navigator" | "assistant" | "preview") => Promise<{ ok: boolean; error?: string }>;
+  getCliPreviewSession?: () => Promise<CliPreviewSession | null>;
   startPreviewServer?: (projectId: string) => Promise<{ ok: boolean; url?: string; port?: number; error?: string }>;
   rebuildPreview?: (projectId: string) => Promise<{ ok: boolean; manifest?: GameProjectManifest; previewUrl?: string; error?: string }>;
   readSceneFile?: (projectId: string, scenePath?: string) => Promise<{ ok: boolean; scene?: SceneFile; path?: string; error?: string }>;
+  readCliPreviewSceneFile?: (scenePath?: string) => Promise<{ ok: boolean; scene?: SceneFile; path?: string; error?: string }>;
   updateSceneObject?: (
     projectId: string,
+    scenePath: string | undefined,
+    objectId: string,
+    transform: Partial<SceneObject["transform"]>,
+  ) => Promise<{ ok: boolean; scene?: SceneFile; error?: string }>;
+  updateCliPreviewSceneObject?: (
     scenePath: string | undefined,
     objectId: string,
     transform: Partial<SceneObject["transform"]>,

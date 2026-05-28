@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentPhase, GameProjectManifest, PlayStartMode, SceneFile, SceneObject } from "../../types/project-types";
+import type { AgentPhase, CliPreviewSession, GameProjectManifest, PlayStartMode, SceneFile, SceneObject } from "../../types/project-types";
 import { isCodexBusy } from "../app-utils";
 
 type GamePreviewPanelProps = {
   project: GameProjectManifest | null;
   previewProject: GameProjectManifest | null;
   previewableProjectIds: Set<string>;
+  cliPreviewSession?: CliPreviewSession | null;
   phase: AgentPhase;
   onRebuildSource: () => void;
   logInteraction: (type: string, payload?: Record<string, unknown>) => void;
@@ -15,15 +16,17 @@ export function GamePreviewPanel({
   project,
   previewProject,
   previewableProjectIds,
+  cliPreviewSession,
   phase,
   onRebuildSource,
   logInteraction,
 }: GamePreviewPanelProps) {
   const isWorking = isCodexBusy(phase);
+  const cliPreviewProject = cliPreviewSession?.manifest ?? null;
   const currentProjectHasBuild = project ? previewableProjectIds.has(project.id) : false;
   const previousProjectHasBuild = previewProject ? previewableProjectIds.has(previewProject.id) : false;
-  const effectivePreviewProject = previousProjectHasBuild ? previewProject : !isWorking && currentProjectHasBuild ? project : null;
-  const hasPreview = Boolean(effectivePreviewProject);
+  const effectivePreviewProject = cliPreviewProject ?? (previousProjectHasBuild ? previewProject : !isWorking && currentProjectHasBuild ? project : null);
+  const hasPreview = Boolean(effectivePreviewProject || cliPreviewSession?.previewUrl);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewMode, setPreviewMode] = useState<"edit" | "play">("edit");
   const [viewportMode, setViewportMode] = useState<"game" | "scene" | "split" | "inspector">("game");
@@ -41,6 +44,11 @@ export function GamePreviewPanel({
     let cancelled = false;
     setPreviewUrl("");
 
+    if (cliPreviewSession?.previewUrl) {
+      setPreviewUrl(cliPreviewSession.previewUrl);
+      return undefined;
+    }
+
     if (!effectivePreviewProject) return undefined;
 
     window.gameSpark
@@ -55,7 +63,7 @@ export function GamePreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt]);
+  }, [cliPreviewSession?.previewUrl, effectivePreviewProject?.id, effectivePreviewProject?.updatedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,9 +72,12 @@ export function GamePreviewPanel({
 
     if (!effectivePreviewProject) return undefined;
 
-    window.gameSpark
-      ?.readSceneFile?.(effectivePreviewProject.id, effectivePreviewProject.editor.activeScenePath)
-      .then((result) => {
+    const readScene = cliPreviewSession
+      ? window.gameSpark?.readCliPreviewSceneFile?.(effectivePreviewProject.editor.activeScenePath)
+      : window.gameSpark?.readSceneFile?.(effectivePreviewProject.id, effectivePreviewProject.editor.activeScenePath);
+
+    readScene
+      ?.then((result) => {
         if (!cancelled && result?.ok && result.scene) {
           setScene(result.scene);
           setSelectedSceneObjectId(result.scene.objects.find((object) => object.editable)?.id ?? "");
@@ -74,10 +85,12 @@ export function GamePreviewPanel({
       })
       .catch(() => undefined);
 
+    if (!readScene) return undefined;
+
     return () => {
       cancelled = true;
     };
-  }, [effectivePreviewProject?.id, effectivePreviewProject?.updatedAt, effectivePreviewProject?.editor.activeScenePath]);
+  }, [cliPreviewSession, effectivePreviewProject?.id, effectivePreviewProject?.updatedAt, effectivePreviewProject?.editor.activeScenePath]);
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -89,8 +102,8 @@ export function GamePreviewPanel({
   }, []);
 
   const previewFrameUrl =
-    previewUrl && effectivePreviewProject
-      ? `${previewUrl}?t=${encodeURIComponent(effectivePreviewProject.updatedAt)}&mode=${previewMode}&start=${playStartMode}`
+    previewUrl && (effectivePreviewProject || cliPreviewSession)
+      ? `${previewUrl}?t=${encodeURIComponent(effectivePreviewProject?.updatedAt ?? Date.now())}&mode=${previewMode}&start=${playStartMode}`
       : "";
 
   function startPlay(nextStartMode: PlayStartMode) {
@@ -171,7 +184,9 @@ export function GamePreviewPanel({
           }
         : current,
     );
-    const result = await window.gameSpark?.updateSceneObject?.(effectivePreviewProject.id, effectivePreviewProject.editor.activeScenePath, object.id, transform);
+    const result = cliPreviewSession
+      ? await window.gameSpark?.updateCliPreviewSceneObject?.(effectivePreviewProject.editor.activeScenePath, object.id, transform)
+      : await window.gameSpark?.updateSceneObject?.(effectivePreviewProject.id, effectivePreviewProject.editor.activeScenePath, object.id, transform);
     if (result?.ok && result.scene) setScene(result.scene);
   }
 
@@ -237,11 +252,11 @@ export function GamePreviewPanel({
           }}
         >
           <div className="game-preview-transform-surface">
-            {effectivePreviewProject && previewFrameUrl ? (
-              <iframe ref={previewFrameRef} className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject.title} playable preview`} />
+            {previewFrameUrl ? (
+              <iframe ref={previewFrameRef} className="game-preview-frame" src={previewFrameUrl} title={`${effectivePreviewProject?.title ?? cliPreviewSession?.projectId ?? "Game"} playable preview`} />
             ) : null}
           </div>
-          {!effectivePreviewProject || !previewUrl ? (
+          {!hasPreview || !previewUrl ? (
             <div className="preview-empty-state">
               {isWorking || effectivePreviewProject ? <span className="preview-spinner" aria-hidden="true" /> : null}
               <strong>{effectivePreviewProject ? "Starting preview server" : isWorking ? "Generating preview" : "Generate a game to preview"}</strong>

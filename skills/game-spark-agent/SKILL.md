@@ -7,6 +7,8 @@ description: Use when creating, updating, reviewing, or operating Game Spark AI 
 
 This skill is the core Game Spark AI workflow. The Electron app is only a UI shell around this same loop.
 
+Game Spark AI is skill-first. Users may build games entirely through Codex, Claude Code, or another local coding agent without opening the Electron UI. Use the CLI and schema references in `references/cli-tools.md`, `references/scene-schema.md`, and `references/edit-play-contract.md` when operating projects outside the UI.
+
 ## Intent Gate
 
 Treat game generation as a tool, not the default response.
@@ -63,6 +65,7 @@ Game Spark AI is a chat-led game engine. Traditional editor surfaces are control
 - Maintain `manifest.editor.previewMode`, `playStartMode`, and `activeScenePath`. Default `activeScenePath` is `assets/scenes/main.scene.json`.
 - Maintain `manifest.logicGraph` as a code-derived node graph with nodes for triggers, conditions, actions, state, dialogue, and endings.
 - Scene layout and object transforms are authored in `assets/scenes/main.scene.json`. Generated game code must load this file so Edit mode changes appear in Play mode.
+- Current editor selection and AI context are stored under `.game-spark/`. Refresh `.game-spark/agent-context.md` with the CLI before changing selected objects or groups.
 - Edit mode supports object selection and transform edits. Play mode is actual gameplay and must not expose editing controls.
 - Babylon.js 3D scene viewers must load generated or imported 3D scene assets, including Gaussian splats, as environment/world models inside the Babylon scene instead of as a detached iframe showcase. In Edit mode, the viewer camera must support the default Game Spark bindings: hold right mouse + WASD to move the camera, mouse wheel to zoom, and hold mouse wheel to pan.
 - When graph edits are requested, update source code first, then refresh `logicGraph` metadata from the resulting code.

@@ -26,6 +26,7 @@ import type {
   AgentEvent,
   AgentPhase,
   ApplyMode,
+  CliPreviewSession,
   CodexRunRequest,
   EditorToolId,
   GameEngine,
@@ -56,6 +57,7 @@ export default function App() {
   const [selectedEngine, setSelectedEngine] = useState<GameEngine>("babylonjs");
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectSummary[]>([]);
   const [previewableProjectIds, setPreviewableProjectIds] = useState<Set<string>>(new Set());
+  const [cliPreviewSession, setCliPreviewSession] = useState<CliPreviewSession | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({
     path: "~/Game Spark AI",
     defaultPath: "~/Game Spark AI",
@@ -75,6 +77,23 @@ export default function App() {
     if (panelWindowId) setView("workspace");
     window.gameSpark?.getWorkspace?.().then(setWorkspace).catch(() => undefined);
     window.gameSpark?.getSettings?.().then((settings) => setAgentEnv(settings.agentEnv)).catch(() => undefined);
+    window.gameSpark?.getCliPreviewSession?.()
+      .then((session) => {
+        if (!session) return;
+        setCliPreviewSession(session);
+        if (session.manifest) {
+          const normalizedManifest = normalizeManifest(session.manifest);
+          setProject(normalizedManifest);
+          setLastPreviewProject(normalizedManifest);
+          setPreviewableProjectIds((current) => new Set([...current, normalizedManifest.id]));
+          setSelectedAssetId(normalizedManifest.assets[0]?.id ?? "");
+          setActiveEditorTool(normalizedManifest.editor.activeTool);
+          setApplyMode(normalizedManifest.editor.applyMode);
+          setPhase("ready");
+        }
+        setView("workspace");
+      })
+      .catch(() => undefined);
     refreshWorkspaceProjects();
   }, [panelWindowId]);
 
@@ -445,6 +464,7 @@ export default function App() {
             project={project}
             previewProject={lastPreviewProject}
             previewableProjectIds={previewableProjectIds}
+            cliPreviewSession={cliPreviewSession}
             selectedAsset={selectedAsset}
             selectedAssetId={selectedAssetId}
             events={events}

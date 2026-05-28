@@ -5,7 +5,9 @@ const path = require("node:path");
 const { createProjectPreviewService } = require("./project-preview-service.cjs");
 const { WindowService } = require("./window-service.cjs");
 
-const isDev = !app.isPackaged;
+const isCliPreviewLaunch = Boolean(process.env.GAME_SPARK_PREVIEW_URL);
+const isNpmEditorLaunch = process.env.GAME_SPARK_EDITOR_DIST === "1";
+const isDev = !app.isPackaged && !isCliPreviewLaunch && !isNpmEditorLaunch;
 const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
 const windowService = new WindowService({
@@ -13,6 +15,7 @@ const windowService = new WindowService({
   isDev,
   preloadPath: path.join(__dirname, "electron-preload.cjs"),
   devServerUrl: "http://127.0.0.1:5050",
+  appUrl: "game-spark-app://editor/index.html",
 });
 const projectPreviewService = createProjectPreviewService({
   app,
@@ -22,10 +25,20 @@ const projectPreviewService = createProjectPreviewService({
 });
 let activeCodexChild = null;
 const interactionLogSessions = new Map();
+let cliPreviewSession = null;
 
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "game-spark",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+  {
+    scheme: "game-spark-app",
     privileges: {
       standard: true,
       secure: true,
@@ -224,6 +237,24 @@ function registerProjectProtocol() {
   });
 }
 
+function registerAppProtocol() {
+  protocol.registerFileProtocol("game-spark-app", (request, callback) => {
+    try {
+      const parsed = new URL(request.url);
+      const requestPath = decodeURIComponent(parsed.pathname.replace(/^\/+/, "")) || "index.html";
+      const distRoot = path.join(appRoot, "dist");
+      const filePath = path.resolve(distRoot, requestPath);
+      if (!filePath.startsWith(distRoot + path.sep) && filePath !== distRoot) {
+        callback({ error: -10 });
+        return;
+      }
+      callback({ path: filePath });
+    } catch {
+      callback({ error: -2 });
+    }
+  });
+}
+
 async function selectWorkspaceFolder() {
   const result = await dialog.showOpenDialog({
     title: "Choose Game Spark AI workspace",
@@ -315,6 +346,91 @@ function colorFromProject(value) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   }
   return colors[hash % colors.length];
+}
+
+function argValue(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] || "" : "";
+}
+
+async function buildCliPreviewSession() {
+  const previewUrl = process.env.GAME_SPARK_PREVIEW_URL || argValue("--game-spark-preview-url");
+  if (!previewUrl) return null;
+
+  const projectRoot = process.env.GAME_SPARK_PREVIEW_PROJECT_ROOT || argValue("--game-spark-project-root");
+  const projectId = process.env.GAME_SPARK_PREVIEW_PROJECT_ID || argValue("--game-spark-project-id") || (projectRoot ? path.basename(projectRoot) : "");
+  let manifest = null;
+  if (projectRoot) {
+    try {
+      manifest = JSON.parse(await fs.readFile(path.join(projectRoot, "manifest.json"), "utf8"));
+    } catch {
+      manifest = null;
+    }
+  }
+
+  return {
+    projectId,
+    projectRoot,
+    previewUrl,
+    mode: "edit",
+    manifest,
+  };
+}
+
+function cliPreviewScenePath(scenePath) {
+  if (!cliPreviewSession?.projectRoot) {
+    throw new Error("No CLI preview session is active.");
+  }
+  const activeScenePath =
+    scenePath ||
+    (cliPreviewSession.manifest && typeof cliPreviewSession.manifest.editor?.activeScenePath === "string"
+      ? cliPreviewSession.manifest.editor.activeScenePath
+      : "assets/scenes/main.scene.json");
+  const projectRoot = path.resolve(cliPreviewSession.projectRoot);
+  const filePath = path.resolve(projectRoot, activeScenePath);
+  if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
+    throw new Error("Invalid scene path.");
+  }
+  return filePath;
+}
+
+async function readCliPreviewSceneFile(_event, scenePath) {
+  try {
+    const filePath = cliPreviewScenePath(scenePath);
+    return { ok: true, path: filePath, scene: JSON.parse(await fs.readFile(filePath, "utf8")) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function updateCliPreviewSceneObject(_event, scenePath, objectId, transform = {}) {
+  try {
+    const filePath = cliPreviewScenePath(scenePath);
+    const scene = JSON.parse(await fs.readFile(filePath, "utf8"));
+    if (!Array.isArray(scene.objects)) {
+      throw new Error("Scene file does not contain objects.");
+    }
+    let updated = false;
+    scene.objects = scene.objects.map((object) => {
+      if (object?.id !== objectId) return object;
+      updated = true;
+      return {
+        ...object,
+        transform: {
+          ...(object.transform || {}),
+          ...transform,
+        },
+      };
+    });
+    if (!updated) {
+      throw new Error(`Scene object not found: ${objectId}`);
+    }
+    scene.updatedAt = new Date().toISOString();
+    await fs.writeFile(filePath, JSON.stringify(scene, null, 2), "utf8");
+    return { ok: true, scene };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function ensureProject(request) {
@@ -499,6 +615,9 @@ async function readGameSparkSkill() {
     path.join(skillRoot, "references", "asset-generation.md"),
     path.join(skillRoot, "references", "design-rules.md"),
     path.join(skillRoot, "references", "game-quality-bar.md"),
+    path.join(skillRoot, "references", "cli-tools.md"),
+    path.join(skillRoot, "references", "scene-schema.md"),
+    path.join(skillRoot, "references", "edit-play-contract.md"),
     path.join(skillRoot, "references", "lantern-grove5-postmortem.md"),
     path.join(skillRoot, "references", "project-contract.md"),
     path.join(skillRoot, "scripts", "README.md"),
@@ -793,6 +912,9 @@ ipcMain.handle("scene:update-object", projectPreviewService.updateSceneObject);
 ipcMain.handle("preview:open-window", (_event, url) => windowService.openPreviewWindow(url));
 ipcMain.handle("preview:open-browser", (_event, url) => windowService.openPreviewInBrowser(url));
 ipcMain.handle("editor:open-panel-window", (_event, panelId) => windowService.openEditorPanelWindow(panelId));
+ipcMain.handle("cli-preview:get-session", () => cliPreviewSession);
+ipcMain.handle("cli-preview:scene-read", readCliPreviewSceneFile);
+ipcMain.handle("cli-preview:scene-update-object", updateCliPreviewSceneObject);
 ipcMain.handle("window:minimize", (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle("window:toggle-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -806,8 +928,13 @@ ipcMain.handle("window:toggle-maximize", (event) => {
 });
 ipcMain.handle("window:close", (event) => BrowserWindow.fromWebContents(event.sender)?.close());
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerProjectProtocol();
+  registerAppProtocol();
+  cliPreviewSession = await buildCliPreviewSession();
+  if (cliPreviewSession?.previewUrl) {
+    return windowService.openEditorPanelWindow("preview", { notifyPreviewClosed: true });
+  }
   return windowService.createMainWindow();
 });
 

@@ -1,9 +1,9 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const esbuild = require("../engine/node_modules/esbuild");
+const esbuild = require("../editor/node_modules/esbuild");
 
 const repoRoot = path.resolve(__dirname, "..");
-const engineRoot = path.join(repoRoot, "engine");
+const editorRoot = path.join(repoRoot, "editor");
 const sourceSog = "C:\\Users\\ellis\\Downloads\\Cochem Imperial Castle, Germany.sog";
 const projectId = "cochem-gaussian-splat-showcase";
 const title = "Cochem Gaussian Splat Showcase";
@@ -29,8 +29,8 @@ async function main() {
   await esbuild.build({
     entryPoints: [path.join(projectRoot, "src", "main.js")],
     bundle: true,
-    absWorkingDir: engineRoot,
-    nodePaths: [path.join(engineRoot, "node_modules")],
+    absWorkingDir: editorRoot,
+    nodePaths: [path.join(editorRoot, "node_modules")],
     outfile: path.join(projectRoot, "build", "main.js"),
     format: "iife",
     platform: "browser",

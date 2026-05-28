@@ -313,6 +313,7 @@ export function NavigationPanel({
                 onRemove={onRemoveAgentEnv}
                 onSave={onSaveAgentEnv}
               />
+              <CreditsOnlySettings />
             </>
           ) : null}
         </div>
@@ -424,6 +425,60 @@ function AgentEnvSettings({
         </button>
       </div>
       {status.message ? <small className={`settings-status ${status.kind}`}>{status.message}</small> : null}
+    </section>
+  );
+}
+
+function CreditsOnlySettings() {
+  const [selectedPackId, setSelectedPackId] = useState("starter");
+  const creditPacks = [
+    { id: "starter", credits: 500, price: "$5" },
+    { id: "creator", credits: 1500, price: "$12" },
+    { id: "studio", credits: 5000, price: "$35" },
+  ];
+  const selectedPack = creditPacks.find((pack) => pack.id === selectedPackId) ?? creditPacks[0];
+
+  return (
+    <section className="credits-settings" aria-label="Credits">
+      <div className="section-heading">
+        <h2>Credits</h2>
+        <span>Purchase only</span>
+      </div>
+      <p>Game Spark uses prepaid credits for AI generation. No subscription plan is required.</p>
+      <div className="credit-balance-card">
+        <span>Available credits</span>
+        <strong>0</strong>
+      </div>
+      <div className="credit-pack-grid" role="radiogroup" aria-label="Credit packs">
+        {creditPacks.map((pack) => (
+          <button
+            className={pack.id === selectedPackId ? "selected" : ""}
+            key={pack.id}
+            type="button"
+            role="radio"
+            aria-checked={pack.id === selectedPackId}
+            onClick={() => {
+              setSelectedPackId(pack.id);
+              logInteraction("credit_pack_selected", { packId: pack.id, credits: pack.credits, price: pack.price });
+            }}
+          >
+            <strong>{pack.credits.toLocaleString()} credits</strong>
+            <span>{pack.price}</span>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          logInteraction("credit_purchase_clicked", {
+            packId: selectedPack.id,
+            credits: selectedPack.credits,
+            price: selectedPack.price,
+          });
+        }}
+      >
+        Buy {selectedPack.credits.toLocaleString()} credits
+      </button>
     </section>
   );
 }
