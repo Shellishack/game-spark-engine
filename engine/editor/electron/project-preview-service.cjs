@@ -2,7 +2,7 @@ const path = require("node:path");
 const { createPreviewCore } = require("../../cli/dist/preview-core.js");
 
 function createProjectPreviewService({ appRoot, workspaceRoot }) {
-  const repoRoot = path.resolve(appRoot, "..");
+  const repoRoot = path.resolve(appRoot, "..", "..");
   const core = createPreviewCore({
     repoRoot,
     editorRoot: appRoot,

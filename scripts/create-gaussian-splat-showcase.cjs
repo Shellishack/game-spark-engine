@@ -1,9 +1,9 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const esbuild = require("../editor/node_modules/esbuild");
+const esbuild = require("../engine/editor/node_modules/esbuild");
 
 const repoRoot = path.resolve(__dirname, "..");
-const editorRoot = path.join(repoRoot, "editor");
+const editorRoot = path.join(repoRoot, "engine", "editor");
 const sourceSog = "C:\\Users\\ellis\\Downloads\\Cochem Imperial Castle, Germany.sog";
 const projectId = "cochem-gaussian-splat-showcase";
 const title = "Cochem Gaussian Splat Showcase";

@@ -124,8 +124,8 @@ const previewServers = new Map<string, PreviewServerRecord>();
 const requireFromCli = createRequire(__filename);
 
 export function createPreviewCore(options: PreviewCoreOptions = {}) {
-  const repoRoot = options.repoRoot || path.resolve(__dirname, "..", "..");
-  const editorRoot = options.editorRoot || path.join(repoRoot, "editor");
+  const repoRoot = options.repoRoot || path.resolve(__dirname, "..", "..", "..");
+  const editorRoot = options.editorRoot || path.join(repoRoot, "engine", "editor");
   const tempRoot = options.tempRoot || path.join(os.tmpdir(), "game-spark-ai");
 
   return {

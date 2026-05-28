@@ -20,8 +20,9 @@ type JsonPayload = Record<string, unknown>;
 declare const __dirname: string;
 declare const require: NodeRequire;
 
-const repoRoot = path.resolve(__dirname, "..", "..");
-const core = createPreviewCore({ repoRoot, editorRoot: path.join(repoRoot, "editor") });
+const engineRoot = path.resolve(__dirname, "..", "..");
+const repoRoot = path.resolve(engineRoot, "..");
+const core = createPreviewCore({ repoRoot, editorRoot: path.join(engineRoot, "editor") });
 let previewChild: ReturnType<typeof spawn> | null = null;
 
 main().catch((error) => {

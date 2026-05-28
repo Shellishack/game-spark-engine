@@ -6,17 +6,17 @@ Game Spark AI is a skill-first local game engine workflow. Reusable agent instru
 
 Use the existing app structure before adding new directories:
 
-- `cli/` for `@game-spark/cli`, terminal/agent commands, preview serving, and scene context generation.
-- `editor/` for `@game-spark/editor`, Electron main/preload code, and the React editor UI.
-- `editor/web/app/` for the React app shell and primary UI.
-- `editor/web/data/` for mocked pipeline data and app copy.
-- `editor/web/runtime/` for generated preview/runtime helpers.
-- `editor/web/types/` for current UI TypeScript contracts.
+- `engine/cli/` for `@game-spark/cli`, terminal/agent commands, preview serving, and scene context generation.
+- `engine/editor/` for `@game-spark/editor`, Electron main/preload code, and the React editor UI.
+- `engine/editor/web/app/` for the React app shell and primary UI.
+- `engine/editor/web/data/` for mocked pipeline data and app copy.
+- `engine/editor/web/runtime/` for generated preview/runtime helpers.
+- `engine/editor/web/types/` for current UI TypeScript contracts.
 - `skills/game-spark-agent/` for the backend agent loop and game-generation behavior.
 
 ## Development
 
-Run editor commands from `editor` unless the task clearly targets repo-level files or CLI tooling.
+Run editor commands from `engine/editor` unless the task clearly targets repo-level files or CLI tooling.
 
 Common checks:
 
