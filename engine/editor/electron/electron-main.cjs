@@ -1,7 +1,8 @@
-const { BrowserWindow, app, dialog, ipcMain, protocol } = require("electron");
+const { BrowserWindow, app, dialog, ipcMain, net, protocol } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { createProjectPreviewService } = require("./project-preview-service.cjs");
 const { WindowService } = require("./window-service.cjs");
 
@@ -238,19 +239,18 @@ function registerProjectProtocol() {
 }
 
 function registerAppProtocol() {
-  protocol.registerFileProtocol("game-spark-app", (request, callback) => {
+  protocol.handle("game-spark-app", (request) => {
     try {
       const parsed = new URL(request.url);
       const requestPath = decodeURIComponent(parsed.pathname.replace(/^\/+/, "")) || "index.html";
       const distRoot = path.join(appRoot, "dist");
       const filePath = path.resolve(distRoot, requestPath);
       if (!filePath.startsWith(distRoot + path.sep) && filePath !== distRoot) {
-        callback({ error: -10 });
-        return;
+        return new Response("Invalid app path.", { status: 403 });
       }
-      callback({ path: filePath });
+      return net.fetch(pathToFileURL(filePath).toString());
     } catch {
-      callback({ error: -2 });
+      return new Response("Failed to load app asset.", { status: 500 });
     }
   });
 }

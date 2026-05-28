@@ -1,4 +1,6 @@
 const { BrowserWindow, shell } = require("electron");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 class WindowService {
@@ -116,25 +118,34 @@ class WindowService {
   }
 
   attachDiagnostics(window) {
+    const writeDebug = (message) => {
+      if (process.env.GAME_SPARK_DEBUG_WINDOW !== "1") return;
+      fs.appendFileSync(path.join(os.tmpdir(), "game-spark-window-debug.log"), `${message}\n`, "utf8");
+    };
     window.webContents.on("did-finish-load", async () => {
       if (process.env.GAME_SPARK_DEBUG_WINDOW !== "1") return;
       try {
         const info = await window.webContents.executeJavaScript(
           "({ url: location.href, rootTextLength: document.getElementById('root')?.innerText?.length ?? 0, bodyText: document.body.innerText.slice(0, 200) })",
         );
+        writeDebug(`[loaded] ${JSON.stringify(info)}`);
         process.stderr.write(`[Game Spark loaded] ${JSON.stringify(info)}\n`);
       } catch (error) {
+        writeDebug(`[diagnostics failed] ${error instanceof Error ? error.message : String(error)}`);
         process.stderr.write(`[Game Spark diagnostics failed] ${error instanceof Error ? error.message : String(error)}\n`);
       }
     });
     window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
       if (level < 2) return;
+      writeDebug(`[console] ${message} (${sourceId}:${line})`);
       process.stderr.write(`[Game Spark renderer] ${message} (${sourceId}:${line})\n`);
     });
     window.webContents.on("render-process-gone", (_event, details) => {
+      writeDebug(`[gone] ${details.reason}`);
       process.stderr.write(`[Game Spark renderer gone] ${details.reason}\n`);
     });
     window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+      writeDebug(`[fail-load] ${errorCode} ${errorDescription} ${validatedUrl}`);
       process.stderr.write(`[Game Spark load failed] ${errorCode} ${errorDescription} ${validatedUrl}\n`);
     });
   }

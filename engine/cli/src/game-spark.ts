@@ -117,6 +117,7 @@ function openEditor(session: { preview: boolean; url?: string; projectId?: strin
         cwd: editorRoot,
         env: {
           ...process.env,
+          GAME_SPARK_EDITOR_DIST: "1",
           ...(session.preview
             ? {
                 GAME_SPARK_PREVIEW_URL: session.url || "",
