@@ -7,7 +7,9 @@ import { createPreviewCore } from "./preview-core";
 type CliArgs = {
   positionals: string[];
   help?: boolean;
+  detailed?: boolean;
   open?: boolean;
+  preview?: boolean;
   port?: number;
   project?: string;
   workspace?: string;
@@ -26,7 +28,7 @@ const core = createPreviewCore({ repoRoot, editorRoot: path.join(engineRoot, "ed
 let previewChild: ReturnType<typeof spawn> | null = null;
 
 main().catch((error) => {
-  writeJson({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  writeOutput({ ok: false, error: error instanceof Error ? error.message : String(error) }, { detailed: process.argv.includes("--detailed"), kind: "error" });
   process.exit(1);
 });
 
@@ -35,7 +37,7 @@ async function main() {
   const [domain, action, subaction] = args.positionals;
 
   if (args.help || !domain) {
-    writeJson({ ok: true, usage: usage() });
+    writeOutput({ ok: true, usage: usage() }, { detailed: Boolean(args.detailed), kind: "help" });
     return;
   }
 
@@ -43,15 +45,15 @@ async function main() {
     const openResult = await openEditor({
       preview: false,
     });
-    if (!openResult.ok) return exitJson(openResult, 1);
-    writeJson({ ok: true, opened: true, mode: "editor" });
+    if (!openResult.ok) return exitOutput(openResult, args, 1, "error");
+    writeOutput({ ok: true, opened: true, mode: "editor" }, { detailed: Boolean(args.detailed), kind: "editor" });
     keepAlive();
     return;
   }
 
   if ((domain === "start" && args.preview) || (domain === "preview" && action === "start")) {
     const result = await core.startPreviewServer({ project: projectArg(args), workspace: args.workspace, port: args.port });
-    if (!result.ok) return exitJson(result, 1);
+    if (!result.ok) return exitOutput(result, args, 1, "error");
     let opened = false;
     if (args.open) {
       const openResult = await openElectronPreview({
@@ -60,26 +62,29 @@ async function main() {
         projectRoot: String(result.projectRoot),
       });
       opened = openResult.ok;
-      if (!openResult.ok) return exitJson({ ...result, opened, openError: openResult.error }, 1);
+      if (!openResult.ok) {
+        await core.stopPreviewServer(String(result.projectRoot));
+        return exitOutput({ ...result, ok: false, opened, openError: openResult.error }, args, 1, "error");
+      }
     }
-    writeJson({ ...result, opened });
+    writeOutput({ ...result, opened }, { detailed: Boolean(args.detailed), kind: "preview-start" });
     keepAlive();
     return;
   }
 
   if (domain === "preview" && action === "rebuild") {
-    return exitJson(await core.rebuildProjectPreview({ project: projectArg(args), workspace: args.workspace }));
+    return exitOutput(await core.rebuildProjectPreview({ project: projectArg(args), workspace: args.workspace }), args, undefined, "preview-rebuild");
   }
 
   if (domain === "scene" && action === "read") {
-    return exitJson(await core.readSceneFile({ project: projectArg(args), workspace: args.workspace, scenePath: args.scene }));
+    return exitOutput(await core.readSceneFile({ project: projectArg(args), workspace: args.workspace, scenePath: args.scene }), args, undefined, "scene-read");
   }
 
   if (domain === "scene" && action === "context") {
-    return exitJson(await core.writeAgentContext({ project: projectArg(args), workspace: args.workspace, scenePath: args.scene }));
+    return exitOutput(await core.writeAgentContext({ project: projectArg(args), workspace: args.workspace, scenePath: args.scene }), args, undefined, "scene-context");
   }
 
-  return exitJson({ ok: false, error: `Unknown command: ${domain} ${action}` }, 1);
+  return exitOutput({ ok: false, error: `Unknown command: ${domain} ${action || ""}`.trim() }, args, 1, "error");
 }
 
 function projectArg(args: CliArgs) {
@@ -107,6 +112,13 @@ function openEditor(session: { preview: boolean; url?: string; projectId?: strin
       process.platform === "win32"
         ? path.join(editorRoot, "node_modules", "electron", "dist", "electron.exe")
         : path.join(editorRoot, "node_modules", ".bin", "electron");
+    if (!fs.existsSync(electronCommandPath)) {
+      resolve({
+        ok: false,
+        error: `The editor UI package is installed, but Electron was not found at ${electronCommandPath}. Reinstall @game-spark/editor.`,
+      });
+      return;
+    }
     let settled = false;
     previewChild = spawn(
       electronCommandPath,
@@ -163,10 +175,11 @@ function openEditor(session: { preview: boolean; url?: string; projectId?: strin
 
 function resolveEditorPackageRoot(): { ok: true; editorRoot: string } | { ok: false; error: string } {
   try {
-    return {
-      ok: true,
-      editorRoot: path.dirname(require.resolve("@game-spark/editor/package.json", { paths: [process.cwd(), __dirname] })),
-    };
+    const editorRoot = path.dirname(require.resolve("@game-spark/editor/package.json", { paths: [process.cwd(), __dirname] }));
+    if (!fs.existsSync(path.join(editorRoot, "package.json"))) {
+      return { ok: false, error: "The editor UI package could not be resolved." };
+    }
+    return { ok: true, editorRoot };
   } catch {
     const globalEditorRoot = resolveGlobalEditorPackageRoot();
     if (globalEditorRoot) {
@@ -223,8 +236,16 @@ function parseArgs(argv: string[]): CliArgs {
       result.help = true;
       continue;
     }
+    if (name === "detailed") {
+      result.detailed = true;
+      continue;
+    }
     if (name === "open") {
       result.open = true;
+      continue;
+    }
+    if (name === "preview") {
+      result.preview = true;
       continue;
     }
     const value = argv[index + 1];
@@ -237,18 +258,108 @@ function parseArgs(argv: string[]): CliArgs {
 
 function usage(): string[] {
   return [
-    "game-spark start --preview [--project <id-or-path>] [--workspace <path>] [--port <number|0>] [--open]",
-    "game-spark editor  # requires @game-spark/editor",
-    "game-spark preview start [--project <id-or-path>] [--workspace <path>] [--port <number|0>] [--open]",
-    "game-spark preview rebuild --project <id-or-path> [--workspace <path>]",
-    "game-spark scene read [--project <id-or-path>] [--workspace <path>] [--scene <path>]",
-    "game-spark scene context [--project <id-or-path>] [--workspace <path>] [--scene <path>]",
+    "game-spark start --preview [--project <id-or-path>] [--workspace <path>] [--port <number|0>] [--open] [--detailed]",
+    "game-spark editor [--detailed]",
+    "game-spark preview start [--project <id-or-path>] [--workspace <path>] [--port <number|0>] [--open] [--detailed]",
+    "game-spark preview rebuild --project <id-or-path> [--workspace <path>] [--detailed]",
+    "game-spark scene read [--project <id-or-path>] [--workspace <path>] [--scene <path>] [--detailed]",
+    "game-spark scene context [--project <id-or-path>] [--workspace <path>] [--scene <path>] [--detailed]",
   ];
 }
 
-function exitJson(payload: JsonPayload, code = payload?.ok === false ? 1 : 0) {
-  writeJson(payload);
+function exitOutput(payload: JsonPayload, args: CliArgs, code = payload?.ok === false ? 1 : 0, kind: OutputKind = "generic") {
+  writeOutput(payload, { detailed: Boolean(args.detailed), kind });
   process.exit(code);
+}
+
+type OutputKind = "help" | "editor" | "preview-start" | "preview-rebuild" | "scene-read" | "scene-context" | "error" | "generic";
+
+function writeOutput(payload: JsonPayload, options: { detailed: boolean; kind: OutputKind }) {
+  if (options.detailed) {
+    writeJson(payload);
+    return;
+  }
+
+  process.stdout.write(`${formatMessage(payload, options.kind)}\n`);
+}
+
+function formatMessage(payload: JsonPayload, kind: OutputKind) {
+  if (payload.ok === false) {
+    return `Game Spark failed: ${payload.error || payload.openError || "Unknown error."}`;
+  }
+
+  if (kind === "help") {
+    return helpManual();
+  }
+
+  if (kind === "editor") {
+    return "Game Spark editor opened.";
+  }
+
+  if (kind === "preview-start") {
+    const lines = [`Preview server started: ${payload.url || "URL unavailable"}`];
+    if (payload.opened) lines.push("Editor preview window opened.");
+    else lines.push("Run with --open to open the editor preview window.");
+    lines.push("Press Ctrl+C to stop the preview server.");
+    return lines.join("\n");
+  }
+
+  if (kind === "preview-rebuild") {
+    return "Preview rebuilt.";
+  }
+
+  if (kind === "scene-read") {
+    return `Scene loaded${payload.path ? `: ${payload.path}` : "."}`;
+  }
+
+  if (kind === "scene-context") {
+    return `Agent context written${payload.contextPath ? `: ${payload.contextPath}` : "."}`;
+  }
+
+  return "Game Spark command completed.";
+}
+
+function helpManual() {
+  return [
+    "Game Spark CLI",
+    "",
+    "Use Game Spark from a terminal or from an agent workflow. By default, commands print short human-readable output.",
+    "Add --detailed when another tool needs the full JSON payload.",
+    "",
+    "Common Commands",
+    "",
+    "  Open the editor",
+    "    game-spark editor",
+    "",
+    "  Start a playable preview for the current project",
+    "    game-spark start --preview",
+    "",
+    "  Start a preview and open it in the editor window",
+    "    game-spark preview start --project <id-or-path> --open",
+    "",
+    "  Rebuild a project's local preview",
+    "    game-spark preview rebuild --project <id-or-path>",
+    "",
+    "  Read scene data for inspection",
+    "    game-spark scene read --project <id-or-path> --scene <path>",
+    "",
+    "  Write scene context for an agent run",
+    "    game-spark scene context --project <id-or-path> --scene <path>",
+    "",
+    "Options",
+    "",
+    "  --project <id-or-path>    Project id, project folder, or . for the current folder.",
+    "  --workspace <path>        Workspace folder that contains local Game Spark projects.",
+    "  --scene <path>            Scene file path inside the selected project.",
+    "  --port <number|0>         Preview server port. Use 0 to choose an available port.",
+    "  --open                    Open the Electron preview window after starting the server.",
+    "  --detailed                Print JSON instead of concise text.",
+    "  --help                    Show this help manual.",
+    "",
+    "All Commands",
+    "",
+    ...usage().map((line) => `  ${line}`),
+  ].join("\n");
 }
 
 function writeJson(payload: unknown) {
